@@ -9,6 +9,58 @@ from scipy.stats import poisson
 Vector: TypeAlias = list[float]
 
 
+class HeuristicMLE:
+    """
+    Considers the uncensored data (ignores overexposure) from the overexposed dataset
+    to estimate maximum likelihood (MLE), background is subtracted from this estimate/data.
+
+    Args:
+        data (np.ndarray): 3D array with the first index for acquisition
+            times i and the remaining for an image M x N. Therefore i x M x N
+        threshold (float): censoring threshold
+        times (list): acquisition times
+        background (np.ndarray or scalar, optional): background with same shape
+            as data or a scalar value. Defaults to 0.
+    """
+
+    def __init__(
+        self,
+        data: np.ndarray,
+        threshold: float,
+        times: list,
+        background: np.ndarray = None,
+    ) -> None:
+
+        self.data = data
+        self.threshold = threshold
+        self.times = times
+        self.background = background if background is not None else 0
+        self.fused_image = np.ones(data.shape[1:])
+
+    @property
+    def label(self):
+        """
+        returns binary mask m(q) that labels
+        censored counts as 0 and uncensored counts as 1
+        """
+
+        data = self.data.copy()
+        mask = data < self.threshold
+        return np.array(mask)
+
+    def mle(self):
+        """fused estimate based on mle estimate"""
+
+        # subtract background and clip negative values
+        nu = np.clip(self.data - self.background, 0, None)
+
+        # fused image using uncensored data
+        fused_image = np.sum(nu * self.label, axis=0)
+        fused_image /= np.tensordot(self.times, self.label, axes=1) + 1e-3
+
+        self.fused_image[...] = fused_image
+
+
 class ExpectationMaximization(abc.ABC):
     """Abstract class for ExpectationMaximization with some common implemented methods
 
@@ -308,53 +360,66 @@ class FullEM(UncensoredEM):
         self.fused_image[...] = fused_image
 
 
-class HeuristicMLE:
-    """
-    Considers the uncensored data (ignores overexposure) from the overexposed dataset
-    to estimate maximum likelihood (MLE), background is subtracted from this estimate/data.
+class Prior(abc.ABC):
+    @abc.abstractmethod
+    def __call__(self):
+        pass
 
-    Args:
-        data (np.ndarray): 3D array with the first index for acquisition
+
+class CensoringPrior(Prior):
+    """
+    A gamma prior whose expected value is an image with censored pixels
+    set to the threshold
+
+    Parameters
+    ----------
+    data (np.ndarray): 3D array with the first index for acquisition
             times i and the remaining for an image M x N. Therefore i x M x N
-        threshold (float): censoring threshold
-        times (list): acquisition times
-        background (np.ndarray or scalar, optional): background with same shape
-            as data or a scalar value. Defaults to 0.
+    threshold : float
+        censoring threshold
     """
 
-    def __init__(
-        self,
-        data: np.ndarray,
-        threshold: float,
-        times: list,
-        background: np.ndarray = None,
-    ) -> None:
-
+    def __init__(self, data: np.ndarray, threshold: float) -> None:
         self.data = data
         self.threshold = threshold
-        self.times = times
-        self.background = background if background is not None else 0
-        self.fused_image = np.ones(data.shape[1:])
+        self.alpha = 1e-3
+        self.beta = 1e-3
 
-    @property
-    def label(self):
+    def cens_label(self) -> np.ndarray:
         """
         returns binary mask m(q) that labels
-        censored counts as 0 and uncensored counts as 1
+        censored counts as 1 and uncensored counts as 0
         """
 
         data = self.data.copy()
-        mask = data < self.threshold
+        mask = data >= self.threshold
         return np.array(mask)
 
-    def mle(self):
-        """fused estimate based on mle estimate"""
+    def __call__(self) -> np.ndarray:
+        # check the presence of censoring (nonzero sum)
+        sum_label = np.sum(self.cens_label(), axis=0)
 
-        # subtract background and clip negative values
-        nu = np.clip(self.data - self.background, 0, None)
+        # labels censored counts as 1 and uncensored as 0
+        mask = sum_label > 0
 
-        # fused image using uncensored data
-        fused_image = np.sum(nu * self.label, axis=0)
-        fused_image /= np.tensordot(self.times, self.label, axes=1) + 1e-3
+        # shape and rate of gamma distribution
+        self.alpha = self.alpha * ~mask + mask
+        self.beta = self.beta * ~mask + mask / self.threshold
 
-        self.fused_image[...] = fused_image
+
+class PtychogramMean(CensoringPrior):
+    def __init__(self, data: np.ndarray, threshold: float) -> None:
+        """Exponential Gamma Prior which is a mean of the diffraction
+        patterns recorded at different exposure times
+
+        Parameters
+        ----------
+        data (np.ndarray): 3D array with the first index for acquisition
+            times i and the remaining for an image M x N. Therefore i x M x N
+        threshold : float
+        censoring threshold
+        """
+        super().__init__(data, threshold)
+
+    def __call__(self) -> np.ndarray:
+        self.beta = self.alpha / np.mean(self.data, axis=0)
