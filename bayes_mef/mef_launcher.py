@@ -214,8 +214,8 @@ class LaunchMEF:
 
         return np.array(pty_mle)
 
-    def run_full_em(self, n_iter=200, ncpus=6):
-        """Runs Full EM in parallel"""
+    def run_em(self, n_iter=200, ncpus=6):
+        """Runs EM in parallel"""
 
         # run in parallel
         pty_fullem, times_fullem = parallel_fusion(
@@ -252,8 +252,8 @@ class LaunchMEF:
 
         if self.pty_noisefree_stack is not None:
             # compare with some ground truth (if exists)
-            full_em_corr = corr(pty_fullem[0], self.pty_noisefree_stack[0])
-            print(f"Correlation of Full EM with noisefree: {full_em_corr:.3f}")
+            em_corr = corr(pty_fullem[0], self.pty_noisefree_stack[0])
+            print(f"Correlation of Full EM with noisefree: {em_corr:.3f}")
 
         # min and max for the fused data
         print(
@@ -316,16 +316,17 @@ class LaunchMEF:
         params: dict,
         pty_key: str = "ptychogram",
         mle_switch: bool = True,
-        fullem_switch: bool = True,
+        em_switch: bool = True,
         n_iter_fullem: int = 200,
         ncpus_fullem: int = 6,
         save_misc: bool = False,
     ):
-        os.makedirs(savepath, exist_ok=True)
 
         # runs and saves MLE result
         if mle_switch:
-            filepath_heumle = f"{savepath}/heu_mle_{filename}.hdf5"
+            filepath_heumle = f"{savepath}/mle_fused/mle_{filename}.hdf5"
+            os.makedirs(os.path.dirname(filepath_heumle), exist_ok=True)
+
             if not os.path.exists(filepath_heumle):
                 pty_heumle = self.run_mle()
                 times_heumle = self.times
@@ -341,18 +342,17 @@ class LaunchMEF:
                 print(f"File {filepath_heumle} already exists")
 
         # runs and saves full EM result
-        if fullem_switch:
-            filepath_fullem = f"{savepath}/full_em_{filename}.hdf5"
+        if em_switch:
+            filepath_em = f"{savepath}/em_fused/em_{filename}.hdf5"
+            os.makedirs(os.path.dirname(filepath_em), exist_ok=True)
 
             if self.update_fluxes:
-                filepath_fullem = f"{savepath}/full_em_{filename}_with_fluxes.hdf5"
+                filepath_em = f"{savepath}/em_fused/em_{filename}.hdf5"
 
-            if not os.path.exists(filepath_fullem):
-                pty_fullem, fluxes_fullem = self.run_full_em(
-                    n_iter_fullem, ncpus_fullem
-                )
+            if not os.path.exists(filepath_em):
+                pty_fullem, fluxes_fullem = self.run_em(n_iter_fullem, ncpus_fullem)
                 self.save_result(
-                    filepath_fullem,
+                    filepath_em,
                     pty_fullem,
                     fluxes_fullem,
                     params,
@@ -360,4 +360,4 @@ class LaunchMEF:
                     save_misc,
                 )
             else:
-                print(f"File {filepath_fullem} already exists")
+                print(f"File {filepath_em} already exists")

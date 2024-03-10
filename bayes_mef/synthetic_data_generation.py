@@ -381,7 +381,7 @@ def simulate_ptychogram(
     return result
 
 
-def save_noisefree(simdata: dict, filepath: str):
+def save_ground_truth(simdata: dict, filepath: str):
     """saving noisefree ptychogram for comparison"""
 
     with h5py.File(filepath, "w") as hf:
