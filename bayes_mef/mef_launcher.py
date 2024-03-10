@@ -7,7 +7,7 @@ import numpy as np
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
-from bayes_mef.algos import ExpectationMaximization, FullEM, HeuristicMLE, Prior
+from bayes_mef.algos import BayesianMEF, ConventionalMEF, ExpectationMaximization, Prior
 from bayes_mef.utils import corr, timeit
 
 
@@ -187,7 +187,7 @@ class LaunchMEF:
             pty_mle = []
             for patterns in self.pty_stack:
                 # Heuristic MLE
-                heu_mle = HeuristicMLE(
+                heu_mle = ConventionalMEF(
                     patterns, self.threshold, self.times, self.background
                 )
                 heu_mle.mle()
@@ -197,7 +197,7 @@ class LaunchMEF:
             pty_mle = []
             for patterns, bg in zip(self.pty_stack, self.background):
                 # Heuristic MLE
-                heu_mle = HeuristicMLE(patterns, self.threshold, self.times, bg)
+                heu_mle = ConventionalMEF(patterns, self.threshold, self.times, bg)
                 heu_mle.mle()
                 pty_mle.append(heu_mle.fused_image)
 
@@ -207,10 +207,7 @@ class LaunchMEF:
             print(f"Correlation of MLE with noisefree: {mle_corr:.3f}")
 
         # min and max for the fused data
-        print(
-            f"Min heuristic mle: {np.min(pty_mle):.2f},"
-            f" Max heuristic mle: {np.max(pty_mle):.2f}"
-        )
+        print(f"Min MLE: {np.min(pty_mle):.2f}," f" Max MLE: {np.max(pty_mle):.2f}")
 
         return np.array(pty_mle)
 
@@ -218,8 +215,8 @@ class LaunchMEF:
         """Runs EM in parallel"""
 
         # run in parallel
-        pty_fullem, times_fullem = parallel_fusion(
-            FullEM,
+        pty_em, times_fullem = parallel_fusion(
+            BayesianMEF,
             self.pty_stack,
             self.background,
             self.threshold,
@@ -237,8 +234,8 @@ class LaunchMEF:
             corrected_mean_fluxes = list(np.mean(times_fullem, axis=0))
             print("Corrected fluxes: ", corrected_mean_fluxes)
 
-            pty_fullem, _ = parallel_fusion(
-                FullEM,
+            pty_em, _ = parallel_fusion(
+                BayesianMEF,
                 self.pty_stack,
                 self.background,
                 self.threshold,
@@ -252,16 +249,13 @@ class LaunchMEF:
 
         if self.pty_noisefree_stack is not None:
             # compare with some ground truth (if exists)
-            em_corr = corr(pty_fullem[0], self.pty_noisefree_stack[0])
-            print(f"Correlation of Full EM with noisefree: {em_corr:.3f}")
+            em_corr = corr(pty_em[0], self.pty_noisefree_stack[0])
+            print(f"Correlation of EM with noisefree: {em_corr:.3f}")
 
         # min and max for the fused data
-        print(
-            f"Min full EM: {pty_fullem.min():.2f},"
-            f" Max full EM: {pty_fullem.max():.2f}"
-        )
+        print(f"Min EM: {pty_em.min():.2f}," f" Max EM: {pty_em.max():.2f}")
 
-        return pty_fullem, times_fullem
+        return pty_em, times_fullem
 
     def save_result(
         self,

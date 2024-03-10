@@ -1,1 +1,1 @@
-from .algos import FullEM, HeuristicMLE
+from .algos import BayesianMEF, ConventionalMEF

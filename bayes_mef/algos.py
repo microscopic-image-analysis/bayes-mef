@@ -9,7 +9,7 @@ from scipy.stats import poisson
 Vector: TypeAlias = list[float]
 
 
-class HeuristicMLE:
+class ConventionalMEF:
     """
     Considers the uncensored data (ignores overexposure) from the overexposed dataset
     to estimate maximum likelihood (MLE), background is subtracted from this estimate/data.
@@ -230,8 +230,8 @@ class UncensoredEM(ExpectationMaximization):
         self.fused_image[...] = fused_image
 
 
-class FullEM(UncensoredEM):
-    """Full EM uses censored and uncensored data for fusion, moreover considers the
+class BayesianMEF(UncensoredEM):
+    """EM uses censored and uncensored data for fusion, moreover considers the
     background treatment aswell
 
     Args:
