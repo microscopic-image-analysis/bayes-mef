@@ -186,20 +186,20 @@ class LaunchMEF:
         if self.background.ndim == 3:
             pty_mle = []
             for patterns in self.pty_stack:
-                # Heuristic MLE
-                heu_mle = ConventionalMEF(
+                # Conventional MEF (MLE)
+                conv_mle = ConventionalMEF(
                     patterns, self.threshold, self.times, self.background
                 )
-                heu_mle.mle()
-                pty_mle.append(heu_mle.fused_image)
+                conv_mle.mle()
+                pty_mle.append(conv_mle.fused_image)
 
         if self.background.ndim == 4:
             pty_mle = []
             for patterns, bg in zip(self.pty_stack, self.background):
-                # Heuristic MLE
-                heu_mle = ConventionalMEF(patterns, self.threshold, self.times, bg)
-                heu_mle.mle()
-                pty_mle.append(heu_mle.fused_image)
+                # Conventional MEF (MLE)
+                conv_mle = ConventionalMEF(patterns, self.threshold, self.times, bg)
+                conv_mle.mle()
+                pty_mle.append(conv_mle.fused_image)
 
         if self.pty_noisefree_stack is not None:
             # compare with some ground truth (if exists)
@@ -215,7 +215,7 @@ class LaunchMEF:
         """Runs EM in parallel"""
 
         # run in parallel
-        pty_em, times_fullem = parallel_fusion(
+        pty_em, em_fluxes = parallel_fusion(
             BayesianMEF,
             self.pty_stack,
             self.background,
@@ -228,10 +228,10 @@ class LaunchMEF:
             max_flux_iterations=n_iter,
         )
 
-        # running Full EM again in parallel without updating fluxes and instead using a fixed
+        # running EM again in parallel without updating fluxes and instead using a fixed
         # average of the corrected fluxes
         if self.update_fluxes:
-            corrected_mean_fluxes = list(np.mean(times_fullem, axis=0))
+            corrected_mean_fluxes = list(np.mean(em_fluxes, axis=0))
             print("Corrected fluxes: ", corrected_mean_fluxes)
 
             pty_em, _ = parallel_fusion(
@@ -255,7 +255,7 @@ class LaunchMEF:
         # min and max for the fused data
         print(f"Min EM: {pty_em.min():.2f}," f" Max EM: {pty_em.max():.2f}")
 
-        return pty_em, times_fullem
+        return pty_em, em_fluxes
 
     def save_result(
         self,
@@ -311,44 +311,48 @@ class LaunchMEF:
         pty_key: str = "ptychogram",
         mle_switch: bool = True,
         em_switch: bool = True,
-        n_iter_fullem: int = 200,
-        ncpus_fullem: int = 6,
+        n_iter_em: int = 200,
+        ncpus_em: int = 6,
         save_misc: bool = False,
+        separate_fused_dir: bool = False,
     ):
 
         # runs and saves MLE result
         if mle_switch:
-            filepath_heumle = f"{savepath}/mle_fused/mle_{filename}.hdf5"
-            os.makedirs(os.path.dirname(filepath_heumle), exist_ok=True)
+            if separate_fused_dir:
+                filepath_mle = f"{savepath}/mle_fused/mle_{filename}.hdf5"
+                os.makedirs(os.path.dirname(filepath_mle), exist_ok=True)
+            else:
+                filepath_mle = f"{savepath}/mle_{filename}.hdf5"
 
-            if not os.path.exists(filepath_heumle):
-                pty_heumle = self.run_mle()
-                times_heumle = self.times
+            if not os.path.exists(filepath_mle):
+                pty_mle = self.run_mle()
+                mle_fluxes = self.times
                 self.save_result(
-                    filepath_heumle,
-                    pty_heumle,
-                    times_heumle,
+                    filepath_mle,
+                    pty_mle,
+                    mle_fluxes,
                     params,
                     pty_key,
                     save_misc,
                 )
             else:
-                print(f"File {filepath_heumle} already exists")
+                print(f"File {filepath_mle} already exists")
 
-        # runs and saves full EM result
+        # runs and saves EM result
         if em_switch:
-            filepath_em = f"{savepath}/em_fused/em_{filename}.hdf5"
-            os.makedirs(os.path.dirname(filepath_em), exist_ok=True)
-
-            if self.update_fluxes:
+            if separate_fused_dir:
                 filepath_em = f"{savepath}/em_fused/em_{filename}.hdf5"
+                os.makedirs(os.path.dirname(filepath_em), exist_ok=True)
+            else:
+                filepath_em = f"{savepath}/em_{filename}.hdf5"
 
             if not os.path.exists(filepath_em):
-                pty_fullem, fluxes_fullem = self.run_em(n_iter_fullem, ncpus_fullem)
+                pty_em, fluxes_em = self.run_em(n_iter_em, ncpus_em)
                 self.save_result(
                     filepath_em,
-                    pty_fullem,
-                    fluxes_fullem,
+                    pty_em,
+                    fluxes_em,
                     params,
                     pty_key,
                     save_misc,
