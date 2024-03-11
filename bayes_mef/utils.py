@@ -132,3 +132,19 @@ def psd(image, bins, ft_switch=False):
         image = np.fft.fftshift(np.fft.fftn(image))
 
     return radial_average(np.square(np.abs(image)), bins)
+
+
+def crop_image(image, zoom_factor=1.5):
+    """just a function to crop an object to focus on the object"""
+
+    # make sure new shape is smaller in every index
+    img_shape = np.array(image.shape)
+    new_shape = np.array(img_shape // zoom_factor, dtype=int)
+    assert np.all(img_shape >= new_shape)
+
+    dy, dx = img_shape - new_shape
+    sy = slice(dy // 2, img_shape[0] - dy // 2)
+    sx = slice(dx // 2, img_shape[1] - dx // 2)
+
+    new_image = image.copy()
+    return new_image[sy, sx]
