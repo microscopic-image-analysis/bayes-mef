@@ -13,9 +13,6 @@ def main(PATH, rho=0.5):
     """run MEF for every value of beta and setting remaining parameters such as censoring threshold, flux factors"""
 
     print(f"Running MEF for scattering parameter: {rho}")
-    # switches to control operations
-    mle_switch = True
-    em_switch = True
 
     # set main directory
     os.makedirs(PATH, exist_ok=True)
@@ -60,7 +57,7 @@ def main(PATH, rho=0.5):
     if not os.path.exists(f"{filepath_noisfree}"):
         save_ground_truth(simdata, filepath_noisfree)
 
-    # instantiate the MEF launcher
+    # instantiate the MEF launcher (flux factors not updated)
     launch_mef = LaunchMEF(
         ptychogram_noisy,
         background,
@@ -68,6 +65,7 @@ def main(PATH, rho=0.5):
         threshold,
         prior=None,
         pty_noisefree_stack=ptychogram_noisefree,
+        update_fluxes=False,
     )
 
     # run and save the fused ptychogram for all the methods
@@ -76,17 +74,18 @@ def main(PATH, rho=0.5):
         filename=f"synthetic_rho{rho}",
         params=simdata,
         pty_key="ptychogram",
-        mle_switch=mle_switch,
-        em_switch=em_switch,
-        n_iter_fullem=200,
-        ncpus_fullem=ncpus,
+        mle_switch=True,
+        em_switch=True,
+        n_iter_em=200,
+        ncpus_em=ncpus,
         save_misc=True,
+        separate_fused_dir=True
     )
 
 
 if __name__ == "__main__":
 
-    # vary over all the scattering parameter rho
+    # vary over all the phase parameter rho
     run_all_rhos = True
     PATH = "data/synthetic/"
 
