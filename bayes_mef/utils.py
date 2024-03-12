@@ -4,11 +4,6 @@ from functools import wraps
 import numpy as np
 from scipy.special import gammaln
 
-try:
-    from PtyLab import Params
-except ImportError:
-    print("Need access to fracPy first")
-
 ComplexArr = np.typing.NDArray[np.complexfloating]
 
 
@@ -43,34 +38,6 @@ def safelog(x, x_min=1e-30):
 def log_factorials(n):
     """log factorials for log of 0, 1!, ..., upto n!"""
     return gammaln(np.arange(1, n + 1))
-
-
-def default_reconstruction_params(params: object):
-    """
-    setting some default reconstruction parameters that won't be mostly changed
-    """
-    assert isinstance(params, Params)
-
-    params.probePowerCorrectionSwitch = True  # probe normalization to measured PSD
-    params.modulusEnforcedProbeSwitch = False  # enforce empty beam
-    params.comStabilizationSwitch = True  # center of mass stabilization for probe
-    params.orthogonalizationSwitch = True  # probe orthogonalization
-    params.orthogonalizationFrequency = 10  # probe orthogonalization frequency
-    params.fftshiftSwitch = (
-        False  # fftswitch for speed probably? Raises error when True
-    )
-    # standard fluctuation exponential poission
-    params.intensityConstraint = "standard"
-    params.absorbingProbeBoundary = (
-        False  # controls if probe has period boundary conditions
-    )
-    params.objectContrastSwitch = False  # pushes object to zero outside ROI
-    params.absObjectSwitch = False  # force the object to be abs-only
-    params.backgroundModeSwitch = False  # background estimate
-    params.couplingSwitch = False  # couple adjacent wavelengths
-    # couple adjacent wavelengths (relaxation parameter)
-    params.couplingAleph = 1
-    params.positionCorrectionSwitch = False  # position correction for encoder
 
 
 def timeit(method):
