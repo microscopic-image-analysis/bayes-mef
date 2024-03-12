@@ -238,12 +238,12 @@ class BayesianMEF(UncensoredEM):
         data (np.ndarray): 3D array with the first index for acquisition
             times i and the remaining for an image M x N. Therefore i x M x N
         threshold (float): censoring threshold
-        times (list): acquisition times
+        times (list): acquisition times or flux factors
         background (np.ndarray or scalar, optional): background with same shape
             as data or a scalar value. Defaults to 0.
         alpha (float, optional): gamma prior shape. Defaults to 1.
         beta (float, optional): gamma prior rate. Defaults to 1/threshold
-        n_init (int, optional): iterations for the initial rate
+        n_init (int, optional): iterations for the initial rate (initialization)
     """
 
     def __init__(
@@ -253,7 +253,7 @@ class BayesianMEF(UncensoredEM):
         times: Vector,
         background: np.ndarray = None,
         update_fluxes: bool = False,
-        max_flux_iteration: int = 100,
+        n_iter_fluxes: int = 100,
         n_init: int = 100,
     ) -> None:
         self.n_init = n_init
@@ -264,7 +264,7 @@ class BayesianMEF(UncensoredEM):
 
         # super constructor to access remaining attributes
         super().__init__(
-            data, threshold, times, background, update_fluxes, max_flux_iteration
+            data, threshold, times, background, update_fluxes, n_iter_fluxes
         )
 
         if self.update_fluxes:
