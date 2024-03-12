@@ -1,5 +1,6 @@
 # some extensions
 .vscode
+poetry.lock
 
 # jupyter notebook
 .ipynb_checkpoints
