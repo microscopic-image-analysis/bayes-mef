@@ -29,7 +29,7 @@ data_saturated = np.clip(data, None, threshold, dtype="float")
 
 # Bayesian MEF with optional field `update_fluxes`. Set it to `True` when
 # flux factors (exposure times) are not accurately known.
-mef_em = BayesianMEF(data_saturated, threshold, times, update_fluxes=False)
+mef_em = BayesianMEF(data_saturated, threshold, times, background, update_fluxes=False)
 mef_em.run(n_iter=100)
 fused_im = mef_em.fused_image.copy()
 ```
