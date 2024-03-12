@@ -11,7 +11,7 @@ The package uses `ptylab` for performing ptychographic reconstructions. For fast
 
 ## Usage
 
-A minimal example demonstrating the usage of `BayesianMEF` by simulating data,
+A minimal example demonstrating the usage of `BayesianMEF` by simulating some data.
 ```python
 from bayes_mef import BayesianMEF
 from skimage.data import camera
