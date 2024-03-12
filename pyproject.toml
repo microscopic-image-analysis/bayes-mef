@@ -1,8 +1,11 @@
 [tool.poetry]
 name = "bayes_mef"
-version = "0.1.1"
-description = "Implementation of the Bayesian MEF method"
-authors = ["Shantanu Kodgirwar <shantanu.kodgirwar@uni-jena.de>"]
+version = "0.1.2"
+description = "Python implementation of the Bayesian MEF method"
+authors = ["Shantanu Kodgirwar <shantanu.kodgirwar@uni-jena.de>", "Michael Habeck <michael.habeck@uni-jena.de>"]
+readme = "README.md"
+license = "BSD-3-Clause"
+repository = "https://github.com/microscopic-image-analysis/bayes-mef"
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
