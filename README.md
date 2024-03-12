@@ -13,6 +13,9 @@ pip install bayes_mef
 ## Usage
 
 A minimal example demonstrating the usage of `BayesianMEF` by simulating some data.
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/microscopic-image-analysis/bayes-mef/blob/main/demo.ipynb)
+
 ```python
 from bayes_mef import BayesianMEF
 from skimage.data import camera
