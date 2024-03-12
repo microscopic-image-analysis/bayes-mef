@@ -1,25 +1,35 @@
 # Bayesian MEF
 
-Implementation of the algorithm referred to as "Bayesian MEF" under publication "Bayesian multi-exposure image fusion for robust high dynamic range preprocessing in ptychography" 
+Bayesian multi-exposure image fusion (MEF) is a general purpose MEF algorithm suitable for any imaging scheme requiring high dynamic range (HDR) treatment. Implementation of the algorithm in the context of ptychography has been published as "Bayesian multi-exposure image fusion for robust high dynamic range preprocessing in ptychography"
 
-
-Clone the repository and go to the root folder
-
+To install the package and its dependencies, 
 ```bash
-git clone https://github.com/microscopic-image-analysis/bayes-mef.git
-cd bayes-mef
+pip install bayes-mef
 ```
 
-Installation of dependencies in a separate environment is easiest with `conda`
+The package uses `ptylab` for performing ptychographic reconstructions. For faster reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
 
-```bash
-conda create --name bayes-mef-venv python=3.10.13 # or python version satisfying ">=3.9, <3.12" 
-conda activate bayes-mef-venv
-pip install -e .
-```
+## Usage
 
-For faster ptychographic reconstructions with GPU, install `cupy` as
+A minimal example demonstrating the usage of `BayesianMEF` by simulating data,
+```python
+from bayes_mef import BayesianMEF
+from skimage.data import camera
+import numpy as np
 
-```bash
-conda install -c conda-forge cupy
+# simulation params
+truth = camera()
+background = 60  # some background
+times = np.array([0.1, 1, 10])  # exposure times or equivalently flux factors
+threshold = 1500 # detector limit
+
+# poisson data based on image formation model that is overexposed
+data = [np.random.poisson(time * truth + background) for time in times]
+data_saturated = np.clip(data, None, threshold, dtype="float")
+
+# Bayesian MEF with optional field `update_fluxes`. Set it to `True` when
+# flux factors (exposure times) are not accurately known.
+mef_em = BayesianMEF(data_saturated, threshold, times, update_fluxes=False)
+mef_em.run(n_iter=100)
+fused_im = mef_em.fused_image.copy()
 ```
