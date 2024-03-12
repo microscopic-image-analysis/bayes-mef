@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "bayes_mef"
-version = "0.1.0"
+version = "0.1.1"
 description = "Implementation of the Bayesian MEF method"
 authors = ["Shantanu Kodgirwar <shantanu.kodgirwar@uni-jena.de>"]
 
