@@ -7,7 +7,7 @@ Bayesian multi-exposure image fusion (MEF) is a general purpose MEF algorithm su
 
 To install the package and its dependencies, 
 ```bash
-pip install bayes-mef
+pip install bayes_mef
 ```
 
 ## Usage
