@@ -6,7 +6,7 @@ import os
 import numpy as np
 
 from bayes_mef.mef_launcher import LaunchMEF
-from bayes_mef.synthetic_data_generation import save_ground_truth, simulate_ptychogram
+from scripts.synthetic_data_generation import save_ground_truth, simulate_ptychogram
 
 
 def main(PATH, rho=0.5):
@@ -79,7 +79,7 @@ def main(PATH, rho=0.5):
         n_iter_em=200,
         ncpus_em=ncpus,
         save_misc=True,
-        separate_fused_dir=True
+        separate_fused_dir=True,
     )
 
 
