@@ -10,8 +10,6 @@ To install the package and its dependencies,
 pip install bayes-mef
 ```
 
-The package uses `ptylab` for performing ptychographic reconstructions. For faster reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
-
 ## Usage
 
 A minimal example demonstrating the usage of `BayesianMEF` by simulating some data.
@@ -36,4 +34,13 @@ mef_em = BayesianMEF(data_saturated, threshold, times, background, update_fluxes
 mef_em.run(n_iter=100)
 fused_im = mef_em.fused_image.copy()
 ```
-See the [`demo.ipynb`](demo.ipynb) for visual comparison. Under [scripts/](scripts) directory, MEF with ptychographic data and subsequent reconstruction used in the publication can be tested. 
+
+Under [scripts/](scripts) directory, MEF with ptychographic data and subsequent reconstructions used in the publication can be tested. These are based on the package `ptylab` that can be installed additionally.
+
+```bash
+pip install git+https://github.com/PtyLab/PtyLab.py.git@main
+```
+
+For faster reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
+
+
