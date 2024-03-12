@@ -5,8 +5,7 @@
 
 Bayesian multi-exposure image fusion (MEF) is a general purpose MEF algorithm suitable for any imaging scheme requiring high dynamic range (HDR) treatment. Implementation of the algorithm in the context of ptychography has been published as "Bayesian multi-exposure image fusion for robust high dynamic range preprocessing in ptychography".
 
-![demo_mef](https://github.com/microscopic-image-analysis/bayes-mef/assets/64919085/44f06535-7eac-47a0-b6db-62ef40456993)
-
+![demo_mef](https://github.com/microscopic-image-analysis/bayes-mef/assets/64919085/d00a8c5e-5e53-4b7e-856b-381cc99523ba)
 
 To install the package and its dependencies, 
 ```bash
