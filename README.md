@@ -41,7 +41,7 @@ mef_em.run(n_iter=100)
 fused_im = mef_em.fused_image.copy()
 ```
 
-Under [scripts/](scripts) directory, MEF with ptychographic data and subsequent reconstructions used in the publication can be tested. These are based on the package `ptylab` that can be installed additionally.
+Under [scripts/](scripts) directory, MEF with ptychographic data and subsequent reconstructions used in the publication can be tested using the data uploaded at [Zenodo](https://doi.org/10.5281/zenodo.10809893). These are based on the package `ptylab` that can be installed additionally.
 
 ```bash
 pip install git+https://github.com/PtyLab/PtyLab.py.git@main
