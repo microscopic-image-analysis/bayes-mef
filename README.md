@@ -50,7 +50,7 @@ pip install git+https://github.com/PtyLab/PtyLab.py.git@main
 If you found this algorithm or the publication useful, please cite us at:
 ```bash
 @misc{Kodgirwar:24,
-      title={Bayesian multi-exposure image fusion for robust high dynamic range preprocessing in ptychography}, 
+      title={Bayesian multi-exposure image fusion for robust high dynamic range ptychography}, 
       author={Shantanu Kodgirwar and Lars Loetgering and Chang Liu and Aleena Joseph and Leona Licht and Daniel S. Penagos Molina and Wilhelm Eschen and Jan Rothhardt and Michael Habeck},
       year={2024},
       eprint={2403.11344},
