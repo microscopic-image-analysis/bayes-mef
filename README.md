@@ -4,7 +4,7 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10809893.svg)](https://doi.org/10.5281/zenodo.10809893)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-purple.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
-Bayesian multi-exposure image fusion (MEF) is a general purpose MEF algorithm suitable for any imaging scheme requiring high dynamic range (HDR) treatment. Implementation of the algorithm in the context of ptychography has been published as "Bayesian multi-exposure image fusion for robust high dynamic range preprocessing in ptychography".
+Bayesian multi-exposure image fusion (MEF) is a general purpose MEF algorithm suitable for any imaging scheme requiring high dynamic range (HDR) treatment. The details on the algorithm and its implementation in the context of ptychography can be found in this [arXiv preprint](https://arxiv.org/abs/2403.11344) version. 
 
 ![demo_mef](https://github.com/microscopic-image-analysis/bayes-mef/assets/64919085/d00a8c5e-5e53-4b7e-856b-381cc99523ba)
 
@@ -45,6 +45,18 @@ Under [scripts/](scripts) directory, MEF with ptychographic data and subsequent 
 
 ```bash
 pip install git+https://github.com/PtyLab/PtyLab.py.git@main
+```
+
+If you found this algorithm or the publication useful, please cite us at:
+```bash
+@misc{Kodgirwar:24,
+      title={Bayesian multi-exposure image fusion for robust high dynamic range preprocessing in ptychography}, 
+      author={Shantanu Kodgirwar and Lars Loetgering and Chang Liu and Aleena Joseph and Leona Licht and Daniel S. Penagos Molina and Wilhelm Eschen and Jan Rothhardt and Michael Habeck},
+      year={2024},
+      eprint={2403.11344},
+      archivePrefix={arXiv},
+      primaryClass={eess.IV}
+}
 ```
 
 For faster reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
