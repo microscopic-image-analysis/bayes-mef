@@ -1,5 +1,3 @@
-# implements the EM methods: uncensored EM, Heuristic EM and full EM
-
 import abc
 from typing import TypeAlias
 
