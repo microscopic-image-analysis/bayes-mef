@@ -47,6 +47,9 @@ Under [scripts/](scripts) directory, MEF with ptychographic data and subsequent 
 pip install git+https://github.com/PtyLab/PtyLab.py.git@main
 ```
 
+For faster reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
+
+## Citation
 If you found this algorithm or the publication useful, please cite us at:
 ```bash
 @misc{Kodgirwar:24,
@@ -58,7 +61,5 @@ If you found this algorithm or the publication useful, please cite us at:
       primaryClass={eess.IV}
 }
 ```
-
-For faster reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
 
 
