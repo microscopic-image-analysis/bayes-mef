@@ -52,7 +52,7 @@ For faster reconstructions using GPU, please install `cupy` as given under its [
 ## Citation
 If you found this algorithm or the publication useful, please cite us at:
 ```tex
-@article{Kodgirwar:24,
+@misc{Kodgirwar:24,
       title={Bayesian multi-exposure image fusion for robust high dynamic range ptychography}, 
       author={Shantanu Kodgirwar and Lars Loetgering and Chang Liu and Aleena Joseph and Leona Licht
               and Daniel S. Penagos Molina and Wilhelm Eschen and Jan Rothhardt and Michael Habeck},
