@@ -15,7 +15,6 @@ scipy = "^1.11.1"
 scikit-image = "^0.21.0"
 h5py = "^3.9.0"
 tqdm = "^4.65.0"
-black = "^23.7.0"
 ipykernel = "^6.25.0"
 
 [build-system]
