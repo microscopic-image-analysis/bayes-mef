@@ -42,7 +42,7 @@ fused_im = mef_em.fused_image.copy()
 ```
 ## Publication results
 
-Ptychography data used for the publication results can be found at [Zenodo](https://doi.org/10.5281/zenodo.10809893). It also includes the code which is in this repository. Therefore, to run python scripts under [scripts/](scripts) directory. Please follow the below steps
+Ptychography data used for the publication results can be found at [Zenodo](https://doi.org/10.5281/zenodo.10809893). It also includes the code which is in this repository. Therefore, to replicate the publication results, please follow the below steps:
 1. Download and unzip the dataset and the code from [Zenodo](https://doi.org/10.5281/zenodo.10809893).
 2. Create a virtual environment and install the dependencies as
    
