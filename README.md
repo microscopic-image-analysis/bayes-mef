@@ -40,14 +40,25 @@ mef_em = BayesianMEF(data_saturated, threshold, times, background, update_fluxes
 mef_em.run(n_iter=100)
 fused_im = mef_em.fused_image.copy()
 ```
+## Publication results
 
-Under [scripts/](scripts) directory, MEF with ptychographic data and subsequent reconstructions used in the publication can be tested using the data uploaded at [Zenodo](https://doi.org/10.5281/zenodo.10809893). These are based on the package `ptylab` that can be installed additionally.
-
-```bash
-pip install git+https://github.com/PtyLab/PtyLab.py.git@main
-```
-
-For faster reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
+Ptychography data used for the publication results can be found at [Zenodo](https://doi.org/10.5281/zenodo.10809893). It also includes the code which is in this repository. Therefore, to run python scripts under [scripts/](scripts) directory. Please follow the below steps
+1. Download and unzip the dataset and the code from [Zenodo](https://doi.org/10.5281/zenodo.10809893).
+2. Create a virtual environment and install the dependencies as
+   
+   ```bash
+   cd bayes-mef
+   conda create --name bayes-mef-venv python=3.10.13 # or python version satisfying ">=3.9, <3.12" 
+   conda activate bayes-mef-venv
+   pip install -e .
+   ```
+3. An additional dependency of `ptylab` is required for processing ptychography data
+   
+   ```bash
+   pip install git+https://github.com/PtyLab/PtyLab.py.git@main
+   ```
+4. Please run python scripts under [scripts/](scripts) directory to replicate results in the publication.
+5. Optional: For faster ptychographic reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
 
 ## Citation
 If you found this algorithm or the publication useful, please cite us at:
