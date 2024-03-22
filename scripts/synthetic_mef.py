@@ -85,8 +85,8 @@ def main(PATH, rho=0.5):
 
 if __name__ == "__main__":
 
-    # vary over all the phase parameter rho
-    run_all_rhos = True
+    # fuses data for every rho
+    run_all_rhos = False
     PATH = "data/synthetic/"
 
     if run_all_rhos:
@@ -95,5 +95,4 @@ if __name__ == "__main__":
         [main(PATH, rho) for rho in rhos]
     else:
         rho = 0.4
-        filename = f"synthetic_rho{rho}"
-        main(PATH, rho, filename)
+        main(PATH, rho)
