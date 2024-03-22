@@ -38,8 +38,41 @@ data_saturated = np.clip(data, None, threshold, dtype="float")
 # flux factors (exposure times) are not accurately known.
 mef_em = BayesianMEF(data_saturated, threshold, times, background, update_fluxes=False)
 mef_em.run(n_iter=100)
-fused_im = mef_em.fused_image.copy()
+fused_em = mef_em.fused_image.copy()
 ```
+
+Additionally, one can also use the `ConventionalMEF` method as given in the paper.
+
+```python
+from bayes_mef import ConventionalMEF
+mef_mle = ConventionalMEF(data_saturated, threshold, times)
+mef_mle.mle()
+fused_mle = mef_mle.fused_image.copy()
+```
+### Parallelized implementatation
+
+In ptychography, one needs to fuse diffraction patterns for every scan position. Processing this for data over all scan positions can be slow for an iterative algorithm. Therefore, one can use the parallelized implementation for MEF `LaunchMEF`. Check the example below
+
+```python
+from bayes_mef import LaunchMEF
+
+launch_mef = LaunchMEF(
+    ptychogram_stack,    # ptychogram shape (n_exposures, n_scans, dp_x, dp_y)
+    background,          # background shape (n_exposures, n_scans, dp_x, dp_y)
+    flux_factors=None,   # if set to `None`, calculates automatically
+    threshold=None,      # if set to `None`, calculates automatically
+    update_fluxes=False, # set to `True` if you want to update fluxes
+)
+
+# runs Bayesian MEF in parallel by defining the number of CPUs `n_cpus`;
+# returns the fused diffraction patterns with shape (n_scans, dp_x, dp_y) and updated flux factors
+n_cpus = 20
+n_iter = 150
+fused_ptyem_stack, em_flux_factors = launch_mef.run_em(n_iter, n_cpus)
+```
+
+For a detailed usage, please check [synthetic_mef.py](scripts/synthetic_mef.py) that uses synthetic ptychography data.
+
 ## Publication results
 
 Ptychography data used for the publication results can be found at [Zenodo](https://doi.org/10.5281/zenodo.10809893). It also includes the code which is in this repository. Therefore, to replicate the publication results, please follow the below steps:
