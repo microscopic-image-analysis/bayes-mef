@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "bayes_mef"
-version = "0.1.4"
+version = "0.1.5"
 description = "Python implementation of the Bayesian MEF method"
 authors = ["Shantanu Kodgirwar <shantanu.kodgirwar@uni-jena.de>", "Michael Habeck <michael.habeck@uni-jena.de>"]
 readme = "README.md"
