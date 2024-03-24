@@ -45,7 +45,7 @@ Additionally, one can also use the `ConventionalMEF` method as given in the pape
 
 ```python
 from bayes_mef import ConventionalMEF
-mef_mle = ConventionalMEF(data_saturated, threshold, times)
+mef_mle = ConventionalMEF(data_saturated, threshold, times, background)
 mef_mle.mle()
 fused_mle = mef_mle.fused_image.copy()
 ```
