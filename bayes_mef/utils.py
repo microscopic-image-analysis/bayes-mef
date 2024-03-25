@@ -2,9 +2,10 @@ import time
 from functools import wraps
 
 import numpy as np
+import numpy.typing as npt
 from scipy.special import gammaln
 
-ComplexArr = np.typing.NDArray[np.complexfloating]
+ComplexArr = npt.NDArray[np.complexfloating]
 
 
 def corr(a, b):
