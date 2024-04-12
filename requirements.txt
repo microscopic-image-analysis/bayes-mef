@@ -6,7 +6,7 @@ asttokens==2.4.1
 astunparse==1.6.3
 attrs==23.2.0
 Babel==2.14.0
--e git+https://github.com/microscopic-image-analysis/bayes-mef.git@a346571f581ffc33aeb7c08567c07f6c3fc08451#egg=bayes_mef
+-e git+https://github.com/microscopic-image-analysis/bayes-mef.git@366e654b2cfa5ab2b426d6d890638c6452bc624a#egg=bayes_mef
 black==23.12.1
 blosc2==2.5.1
 bokeh==3.3.4
