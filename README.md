@@ -77,12 +77,12 @@ For a detailed usage, please check [synthetic_mef.py](scripts/synthetic_mef.py) 
 
 To reproduce the ptychographic reconstruction results from the paper, please follow the below steps:
 
-1. Download the data from [Zenodo](https://doi.org/10.5281/zenodo.10809893) with the following command
+1. Download the data from [Zenodo](https://zenodo.org/doi/10.5281/zenodo.10964222) with the following command:
    ```bash
    ./download_data.sh
    ```
 
-2. Please install the *pinned* dependencies for reproducibility as follows:
+2. Please install the *pinned* dependencies in a virtual environment.
    ```bash
    cd bayes-mef
    conda create --name bayes-mef-venv python=3.10.13 # or python version satisfying ">=3.9, <3.12" 
