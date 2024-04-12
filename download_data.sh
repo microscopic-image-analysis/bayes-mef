@@ -56,4 +56,4 @@ unzip_file "$ZIP_FILE"
 delete_zip "$ZIP_FILE"
 
 # Optional: Print a message indicating completion
-echo "Downloaded the $ZIP_FILE folder successfully"
+echo "Downloaded the data successfully"
