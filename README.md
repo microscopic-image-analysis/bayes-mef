@@ -82,18 +82,20 @@ To reproduce the ptychographic reconstruction results from the paper, please fol
    git clone https://github.com/microscopic-image-analysis/bayes-mef.git
    cd bayes-mef
    conda create --name bayes-mef-venv python=3.10.13 # or python version satisfying ">=3.9, <3.12" 
+   ```
+2. Now activate the environment and install the *pinned* dependencies.
+   ```bash
    conda activate bayes-mef-venv
    pip install -r requirements.txt
    ```
-
-2. Download the data from [Zenodo](https://zenodo.org/doi/10.5281/zenodo.10964222) with the following command:
+3. Download the data from [Zenodo](https://zenodo.org/doi/10.5281/zenodo.10964222) with the following command:
    ```bash
    ./download_data.sh
    ```
 
-3. Optional: For faster ptychographic reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
+4. Optional: For faster ptychographic reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
 
-4. Run files from the [scripts/](scripts) directory for plotting the results.
+5. Run files from the [scripts/](scripts) directory for plotting the results.
 
 ## Citation
 If you found this algorithm or the publication useful, please cite us at:
