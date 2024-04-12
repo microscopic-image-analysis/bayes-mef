@@ -81,7 +81,7 @@ To reproduce the ptychographic reconstruction results from the paper, please fol
    ```bash
    git clone https://github.com/microscopic-image-analysis/bayes-mef.git
    cd bayes-mef
-   conda create --name bayes-mef-venv python=3.10.13 # or python version satisfying ">=3.9, <3.12" 
+   conda create --name bayes-mef-venv python=3.11.5 
    ```
 2. Now activate the environment and install the *pinned* dependencies.
    ```bash
