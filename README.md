@@ -73,25 +73,29 @@ fused_ptyem_stack, em_flux_factors = launch_mef.run_em(n_iter, n_cpus)
 
 For a detailed usage, please check [synthetic_mef.py](scripts/synthetic_mef.py) that uses synthetic ptychography data.
 
-## Publication results
+## Reproducing results
 
-Ptychography data used for the publication results can be found at [Zenodo](https://doi.org/10.5281/zenodo.10809893). It also includes the code which is in this repository. Therefore, to replicate the publication results, please follow the below steps:
-1. Download and unzip the dataset and the code from [Zenodo](https://doi.org/10.5281/zenodo.10809893).
-2. Create a virtual environment and install the dependencies as
-   
+To reproduce the ptychographic reconstruction results from the paper, please follow the below steps:
+
+1. Please clone this repository and install the *pinned* dependencies in a conda environment.
    ```bash
+   git clone https://github.com/microscopic-image-analysis/bayes-mef.git
    cd bayes-mef
-   conda create --name bayes-mef-venv python=3.10.13 # or python version satisfying ">=3.9, <3.12" 
-   conda activate bayes-mef-venv
-   pip install -e .
+   conda create --name bayes-mef-venv python=3.11.5 
    ```
-3. An additional dependency of `ptylab` is required for processing ptychography data
-   
+2. Now activate the environment and install the *pinned* dependencies.
    ```bash
-   pip install git+https://github.com/PtyLab/PtyLab.py.git@main
+   conda activate bayes-mef-venv
+   pip install -r requirements.txt
    ```
-4. Please run python scripts under [scripts/](scripts) directory to replicate results in the publication.
-5. Optional: For faster ptychographic reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
+3. Download the data from [Zenodo](https://zenodo.org/doi/10.5281/zenodo.10964222) with the following command:
+   ```bash
+   ./download_data.sh
+   ```
+
+4. Optional: For faster ptychographic reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
+
+5. Run files from the [scripts/](scripts) directory for plotting the results.
 
 ## Citation
 If you found this algorithm or the publication useful, please cite us at:
