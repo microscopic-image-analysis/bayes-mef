@@ -77,7 +77,7 @@ For a detailed usage, please check [synthetic_mef.py](scripts/synthetic_mef.py) 
 
 To reproduce the ptychographic reconstruction results from the paper, please follow the below steps:
 
-1. Please clone this repository and install the *pinned* dependencies in a conda environment.
+1. Please clone this repository and create a conda environment.
    ```bash
    git clone https://github.com/microscopic-image-analysis/bayes-mef.git
    cd bayes-mef
