@@ -4,7 +4,7 @@
 [![DOI](https://zenodo.org/badge/769216428.svg)](https://zenodo.org/doi/10.5281/zenodo.11103003)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-purple.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
-Bayesian multi-exposure image fusion (MEF) is a general-purpose algorithm to achieve robust high dynamic range (HDR) imaging, particularly in scenarios with low signal-to-noise ratio (SNR) or variations in illumination intensity. This approach is especially crucial for high quality phase retrieval in coherent diffractive imaging (CDI). The algorithm, detailed in the [arXiv preprint](https://arxiv.org/abs/2403.11344), primarily focuses on its implementation and demonstrates the benefits in ptychography. To reproduce the results in the paper, see this [section](#reproducing-results). However, to get started, please install the package and check the demo usage below.
+Bayesian multi-exposure image fusion (MEF) is a general-purpose algorithm to achieve robust high dynamic range (HDR) imaging, particularly in scenarios with low signal-to-noise ratio (SNR) or variations in illumination intensity. This approach could especially be useful for high quality phase retrieval in coherent diffractive imaging (CDI). The algorithm, detailed in this publication ["Bayesian multi-exposure image fusion for robust high dynamic range ptychography"](https://doi.org/10.1364/OE.524284), explains the method and demonstrates the benefits for ptychography. To reproduce the results in the paper, see this [section](#reproducing-results). However, to get started, please install the package and check the demo usage below.
 
 ![demo_mef](https://github.com/microscopic-image-analysis/bayes-mef/assets/64919085/d00a8c5e-5e53-4b7e-856b-381cc99523ba)
 
@@ -100,14 +100,18 @@ To reproduce the ptychographic reconstruction results from the paper, please fol
 ## Citation
 If you found this algorithm or the publication useful, please cite us at:
 ```tex
-@misc{Kodgirwar:24,
-      title={Bayesian multi-exposure image fusion for robust high dynamic range ptychography}, 
-      author={Shantanu Kodgirwar and Lars Loetgering and Chang Liu and Aleena Joseph and Leona Licht
-              and Daniel S. Penagos Molina and Wilhelm Eschen and Jan Rothhardt and Michael Habeck},
-      year={2024},
-      eprint={2403.11344},
-      archivePrefix={arXiv},
-      primaryClass={eess.IV}
+@article{Kodgirwar:24,
+author = {Shantanu Kodgirwar and Lars Loetgering and Chang Liu and Aleena Joseph and Leona Licht and Daniel S. Penagos Molina and Wilhelm Eschen and Jan Rothhardt and Michael Habeck},
+journal = {Opt. Express},
+number = {16},
+pages = {28090--28099},
+publisher = {Optica Publishing Group},
+title = {Bayesian multi-exposure image fusion for robust high dynamic range ptychography},
+volume = {32},
+month = {Jul},
+year = {2024},
+url = {https://opg.optica.org/oe/abstract.cfm?URI=oe-32-16-28090},
+doi = {10.1364/OE.524284},
 }
 ```
 
