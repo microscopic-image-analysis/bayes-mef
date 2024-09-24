@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "bayes_mef"
-version = "0.1.7"
+version = "0.1.8"
 description = "Python implementation of the Bayesian MEF method"
 authors = ["Shantanu Kodgirwar <shantanu.kodgirwar@uni-jena.de>", "Michael Habeck <michael.habeck@uni-jena.de>"]
 readme = "README.md"
@@ -14,7 +14,7 @@ matplotlib = "^3.7.2"
 scipy = "^1.11.1"
 scikit-image = "^0.21.0"
 h5py = "^3.9.0"
-tqdm = "^4.65.0"
+tqdm = "^4.66.5"
 ipykernel = "^6.25.0"
 
 [build-system]
