@@ -92,14 +92,14 @@ To reproduce the ptychographic reconstruction results from the paper, please fol
 > The package is maintained via python package manager [Poetry](https://python-poetry.org/), so instead of `pip` for installing the package and it's requirements, 
 > installation can also simply be done as `poetry install`.
 
-1. Download the data from [Zenodo](https://zenodo.org/doi/10.5281/zenodo.10964222) with the following command:
+3. Download the data from [Zenodo](https://zenodo.org/doi/10.5281/zenodo.10964222) with the following command:
    ```bash
    ./download_data.sh
    ```
 
-2. Optional: For faster ptychographic reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
+4. Optional: For faster ptychographic reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
 
-3. Run files from the [scripts/](scripts) directory for plotting the results.
+5. Run files from the [scripts/](scripts) directory for plotting the results.
 
 ## Citation
 If you found this algorithm or the publication useful, please cite us at:
