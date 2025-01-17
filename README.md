@@ -75,7 +75,7 @@ For a detailed usage, please check [synthetic_mef.py](scripts/synthetic_mef.py) 
 
 ## Reproducing results
 
-To reproduce the ptychographic reconstruction results from the paper, please follow the below steps:
+To reproduce the ptychographic reconstruction results from the paper, please install the package in development mode and download the necessary data. This is explained in the following steps:
 
 1. Please clone this repository and create a conda environment.
    ```bash
@@ -88,6 +88,10 @@ To reproduce the ptychographic reconstruction results from the paper, please fol
    conda activate bayes-mef-venv
    pip install -r requirements.txt
    ```
+> [!NOTE] 
+> The package is maintained via python package manager [Poetry](https://python-poetry.org/), so instead of using `pip` for installing the package and its requirements, 
+> installation can also simply be done as `poetry install`.
+
 3. Download the data from [Zenodo](https://zenodo.org/doi/10.5281/zenodo.10964222) with the following command:
    ```bash
    ./download_data.sh
