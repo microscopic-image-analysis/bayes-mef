@@ -1,6 +1,6 @@
 # some extensions
 .vscode
-
+.DS_Store
 # jupyter notebook
 .ipynb_checkpoints
 */.ipynb_checkpoints/*

@@ -13,11 +13,7 @@ is_windows() {
 download_zip() {
     local URL="$1"
     local ZIP_FILE=$(basename "$URL")
-    if is_windows; then
-        curl -o "$ZIP_FILE" "$URL" || { echo "Error: Failed to download $ZIP_FILE"; exit 1; }
-    else
-        wget "$URL" || { echo "Error: Failed to download $ZIP_FILE"; exit 1; }
-    fi
+    curl -L -o "$ZIP_FILE" "$URL" || { echo "Error: Failed to download $ZIP_FILE"; exit 1; }
 }
 
 # Function to unzip the file
