@@ -19,8 +19,8 @@ def save_reconstruction(
     monitor: Monitor,
     PATH: str,
     filename: str,
-    method: str = None,
-    save_filename: str = None,
+    method: str | None = None,
+    save_filename: str | None = None,
 ) -> None:
     """
     Uses internal reconstruction state to store the result as well as png result,
@@ -115,7 +115,7 @@ def synthetic_recon_params(filepath, pty_key):
 
 
 def experimental_recon_params(filepath):
-    experimentalData, reconstruction, params, monitor, engine = easyInitialize(
+    experimentalData, reconstruction, params, monitor, _engine = easyInitialize(
         filepath, operationMode="CPM"
     )
 
@@ -249,7 +249,6 @@ def recon_synthetic_all_rhos(PATH):
 
     for rho in rhos:
         for method in ["noisefree", "mle", "em"]:
-
             if method == "noisefree":
                 savepath = os.path.join(PATH, "truth/reconstructed")
             elif method == "mle":
@@ -274,7 +273,6 @@ def recon_synthetic_all_rhos(PATH):
 
 
 if __name__ == "__main__":
-
     synthetic_datapath = "data/synthetic/"
 
     # runs recontruction for a single value of rho
