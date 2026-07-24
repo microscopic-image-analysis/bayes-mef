@@ -35,12 +35,23 @@ constructor signatures, `run()` semantics and `.fused_image` attribute.
 - **A second flux initialiser**, selected with `flux_init` on the classes and
   `LaunchMEF`, or with `background=` and `common_mask=True` on `set_fluxes`
   directly. `"matched"` subtracts the background and uses only pixels uncensored
-  in every exposure; on a simulated ptychogram with true ratios 0.25:0.5:1:2:4:8
-  it returns 0.24:0.50:1.00:2.01:4.03:8.11 against the default's
-  0.58:1.16:1.00:1.06:1.35:1.19. On the README simulation it matches knowing the
-  true exposures (0.989) and converges in 5 iterations rather than 55 with
-  refinement. The default remains `"uncensored"`, bit-identical to v0.1.9, since
-  published results depend on it.
+  in every exposure. For strongly scattering data this is a large improvement:
+  on a simulated ptychogram with true ratios 0.25:0.5:1:2:4:8 it returns
+  0.24:0.50:1.00:2.01:4.03:8.11 against the default's
+  0.58:1.16:1.00:1.06:1.35:1.19, and on the README simulation it matches knowing
+  the true exposures (0.989) in 5 iterations rather than 55 with refinement.
+
+  It does **not** help for weakly scattering, low SNR data. Once the background
+  is comparable to the signal, summed counts carry almost no information about
+  the exposures whichever pixels are summed: with true ratios 0.25:1:4:16 the
+  default returns 1.02:1.00:1.01:0.96 and `"matched"` 1.05:1.00:1.09:1.26. What
+  recovers the range there is EM's iterative treatment of the background, via
+  `update_fluxes=True` (to 0.76:1.00:1.23:15.55), which is the regime the paper
+  is about. Estimating flux factors therefore warns unless refinement is
+  enabled, and warns regardless when the estimate comes out nearly flat.
+
+  The default remains `"uncensored"`, bit-identical to v0.1.9, since published
+  results depend on it.
 - `set_fluxes` and `set_threshold` moved to `bayes_mef.utils` so the single
   image classes can use them. They are still importable from
   `bayes_mef.mef_launcher` and from the top level.

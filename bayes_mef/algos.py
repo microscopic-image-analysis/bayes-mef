@@ -35,19 +35,41 @@ def _resolve(data, threshold, times, background, update_fluxes, flux_init):
         threshold = set_threshold(data)
     if times is None:
         times = estimate_fluxes(data, threshold, flux_init, background)
-        if not update_fluxes and flux_init == "uncensored":
-            warnings.warn(
-                "flux factors were estimated from the data. The default "
-                "initialiser counts only uncensored pixels, so it is "
-                "compressed towards 1 whenever censoring is substantial -- "
-                "which is the case this package exists for. Pass "
-                "update_fluxes=True so EM refines them, flux_init='matched' "
-                "for a better estimate, or `times` explicitly if you know the "
-                "exposures.",
-                UserWarning,
-                stacklevel=3,
-            )
+        _warn_about_estimate(times, update_fluxes)
     return threshold, times
+
+
+# Below this ratio between the largest and smallest estimated flux factor, the
+# estimate carries essentially no information about the exposures.
+_DEGENERATE_SPREAD = 1.5
+
+
+def _warn_about_estimate(times, update_fluxes):
+    """Flag estimates that cannot be trusted on their own."""
+    t = np.abs(np.asarray(times, dtype=float))
+    spread = float(np.max(t) / max(np.min(t), 1e-30))
+
+    if spread < _DEGENERATE_SPREAD:
+        warnings.warn(
+            f"estimated flux factors span only {spread:.2f}x, so they carry "
+            "almost no information about the exposures. Summed counts stop "
+            "tracking the flux once the background dominates, which is the "
+            "weakly scattering, low SNR regime this method targets. Pass "
+            "`times` explicitly if you know the exposures; otherwise "
+            "update_fluxes=True recovers part of the range but not all of it.",
+            UserWarning,
+            stacklevel=4,
+        )
+    elif not update_fluxes:
+        warnings.warn(
+            "flux factors were estimated from the data. Estimating them from "
+            "summed counts compresses the ratios towards 1, the more so the "
+            "heavier the censoring and the weaker the signal against the "
+            "background. Pass update_fluxes=True so EM refines them, or "
+            "`times` explicitly if you know the exposures.",
+            UserWarning,
+            stacklevel=4,
+        )
 
 
 class ConventionalMEF:

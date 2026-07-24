@@ -243,8 +243,12 @@ def test_matched_initialiser_recovers_true_flux_ratios():
     assert np.max(np.abs(default - expected) / expected) > 0.5
 
 
-def test_matched_initialiser_needs_no_refinement():
-    """`matched` alone should match knowing the true exposure times."""
+def test_matched_initialiser_needs_no_refinement_when_scattering_is_strong():
+    """`matched` matches knowing the exposures -- but only at high SNR.
+
+    See test_weakly_scattering_data_needs_the_real_exposures for the regime
+    where this does not hold.
+    """
     from skimage.data import camera
 
     rng = np.random.default_rng(0)
@@ -262,14 +266,73 @@ def test_matched_initialiser_needs_no_refinement():
     assert corr(em.fused_image) > 0.98
 
 
-def test_matched_initialiser_does_not_warn(scenario):
+def test_estimated_fluxes_warn_for_either_initialiser(scenario):
+    """`matched` reduces the compression but does not remove it."""
+    for init in ("uncensored", "matched"):
+        with pytest.warns(UserWarning):
+            BayesianMEF(
+                scenario["data"], background=scenario["background"], flux_init=init
+            )
+
+
+def test_refined_fluxes_are_silent_when_the_estimate_is_informative(scenario):
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
         BayesianMEF(
-            scenario["data"], background=scenario["background"], flux_init="matched"
+            scenario["data"],
+            background=scenario["background"],
+            flux_init="matched",
+            update_fluxes=True,
         )
 
 
 def test_unknown_flux_init_is_rejected(scenario):
     with pytest.raises(ValueError, match="flux_init must be one of"):
         BayesianMEF(scenario["data"], flux_init="nonsense")
+
+
+def test_weakly_scattering_data_defeats_every_flux_estimator():
+    """Once the background dominates, summed counts carry no flux information.
+
+    This is the low SNR regime the method targets, and the reason estimated
+    flux factors are only ever a starting point: what recovers the range is
+    EM's iterative treatment of the background, not the initialiser.
+    """
+    rng = np.random.default_rng(0)
+    n = 96
+    times = np.array([1.0, 4.0, 16.0, 64.0])
+    ind = len(times) // 2 - 1
+
+    y, x = np.indices((n, n)) - n / 2
+    peak, background = 8.0, 10.0  # weak scatterer, background ~ signal
+    truth = peak * np.exp(-(x**2 + y**2) / 150.0) + 0.05 * peak
+    data = np.array([rng.poisson(t * truth / times.max() + background) for t in times])
+    threshold = float(data.max() * 0.6)
+    data = np.clip(data, None, threshold).astype(float)
+
+    def ratios(em):
+        t = np.asarray(em.times)
+        return t / t[ind]
+
+    # Neither initialiser resolves the exposures: both come out nearly flat.
+    for init in ("uncensored", "matched"):
+        with pytest.warns(UserWarning):
+            em = BayesianMEF(data, background=background, flux_init=init)
+        assert np.max(ratios(em)) < 2.0, f"{init} unexpectedly resolved the exposures"
+
+    # Refinement recovers most of the range; the true span is 64x.
+    refined = BayesianMEF(
+        data, background=background, flux_init="matched", update_fluxes=True
+    )
+    refined.run(300)
+    assert np.max(ratios(refined)) > 8.0
+
+
+def test_degenerate_flux_estimate_warns_even_with_refinement():
+    """A nearly flat estimate is a data-quality signal, not just a nudge."""
+    rng = np.random.default_rng(0)
+    # background swamps the signal entirely
+    data = rng.poisson(200.0, (4, 32, 32)).astype(float)
+
+    with pytest.warns(UserWarning, match="carry almost no information"):
+        BayesianMEF(data, background=200.0, update_fluxes=True)

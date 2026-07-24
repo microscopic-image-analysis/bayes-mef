@@ -71,35 +71,58 @@ fused_mle = mef_mle.fused_image.copy()
 ### When the exposures are not known
 
 `threshold` and `times` are optional. Omit them and they are estimated from the
-data, exactly as `LaunchMEF` does, which is the usual situation with
-experimental data:
+data, exactly as `LaunchMEF` does:
 
 ```python
-mef_em = BayesianMEF(data_saturated, background=background, flux_init="matched")
-mef_em.run(n_iter=100)
+mef_em = BayesianMEF(data_saturated, background=background, update_fluxes=True)
+mef_em.run(n_iter=200)
 ```
 
-There are two initialisers, selected with `flux_init`:
+**Pass the real exposure times whenever you know them.** Estimating flux factors
+from summed counts is only a starting point: the sums are compressed towards
+equality both by censoring, which removes the brightest pixels of the long
+exposures, and by the background, which contributes the same floor to every
+exposure. `update_fluxes=True` is what recovers the range, and is recommended
+whenever `times` was estimated.
+
+Two initialisers are available through `flux_init`:
 
 - `"uncensored"` (default) sums each exposure over its own uncensored pixels.
-  This is the v0.1.9 behaviour. It undercounts long exposures, whose brightest
-  pixels are exactly the censored ones, so the ratios collapse towards 1 when
-  censoring is heavy. It is a starting point for `update_fluxes=True`, not an
-  answer, and a warning is raised if you use it without refining.
+  This is the v0.1.9 behaviour.
 - `"matched"` subtracts the background and uses only pixels uncensored in
   *every* exposure, so the exposures are compared like with like.
 
-On the simulation above, whose true exposure ratios are 1:10:100:
+How much this matters depends entirely on how strongly the sample scatters.
+For a bright sample (true ratios 1:10:100, correlation with ground truth):
 
-| flux factors                          | corr. with truth | iterations to 0.98 |
-| ------------------------------------- | ---------------- | ------------------ |
-| true exposure times                   | 0.989            | 5                  |
-| `"uncensored"`                        | 0.161            | never              |
-| `"uncensored"` + `update_fluxes=True` | 0.989            | 55                 |
-| `"matched"`                           | 0.989            | 5                  |
+| flux factors                          | corr. | iterations to 0.98 |
+| ------------------------------------- | ----- | ------------------ |
+| true exposure times                   | 0.989 | 5                  |
+| `"uncensored"`                        | 0.161 | never              |
+| `"uncensored"` + `update_fluxes=True` | 0.989 | 55                 |
+| `"matched"`                           | 0.989 | 5                  |
 
-`"matched"` is as good as knowing the exposures and needs no refinement. The
-default is kept for backwards compatibility, since published results rely on it.
+For a weakly scattering, low SNR sample, where the background is comparable to
+the signal (true ratios 0.25:1:4:16):
+
+| flux factors                          | corr. | recovered ratios          |
+| ------------------------------------- | ----- | ------------------------- |
+| true exposure times                   | 0.413 | 0.25 1.00 4.00 16.00      |
+| `"uncensored"`                        | 0.207 | 1.02 1.00 1.01 0.96       |
+| `"uncensored"` + `update_fluxes=True` | 0.295 | 0.73 1.00 1.12 12.20      |
+| `"matched"`                           | 0.234 | 1.05 1.00 1.09 1.26       |
+| `"matched"` + `update_fluxes=True`    | 0.292 | 0.76 1.00 1.23 15.55      |
+
+Here *no* initialiser works: once the background dominates, summed counts carry
+almost no information about the flux, whichever pixels you sum and whether or
+not you subtract a background estimate. What recovers the range is the
+iterative treatment of the background inside EM, which is the point of the
+method and the regime the [paper](https://doi.org/10.1364/OE.524284)
+is about. A warning is raised when the estimated factors come out nearly flat,
+since that is the signature of this situation.
+
+So: `"matched"` is worth using when the sample scatters strongly, and saves the
+flux-refinement iterations. For weak scatterers, supply the exposure times.
 
 Estimated flux factors are relative to one exposure, so the fused image is on a
 relative rather than absolute scale.
@@ -120,7 +143,7 @@ launch_mef = LaunchMEF(
     times=None,          # if set to `None`, calculates automatically
     threshold=None,      # if set to `None`, calculates automatically
     update_fluxes=False, # set to `True` if you want to update fluxes
-    flux_init="matched", # better estimate when `times` is None; see above
+    flux_init="uncensored",  # or "matched" for strongly scattering data
 )
 
 # Fuses every scan position with one vectorised program.
