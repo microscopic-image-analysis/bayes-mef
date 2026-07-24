@@ -1,6 +1,6 @@
 # Bayesian MEF
 [![PyPI](https://img.shields.io/pypi/v/bayes_mef)](https://pypi.org/project/bayes_mef/)
-![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)
+![Python 3.11+](https://img.shields.io/badge/python-3.11+-green.svg)
 [![DOI](https://zenodo.org/badge/769216428.svg)](https://zenodo.org/doi/10.5281/zenodo.11103003)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-purple.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
@@ -8,9 +8,16 @@ Bayesian multi-exposure image fusion (MEF) is a general-purpose algorithm to ach
 
 ![demo_mef](https://github.com/microscopic-image-analysis/bayes-mef/assets/64919085/d00a8c5e-5e53-4b7e-856b-381cc99523ba)
 
-To install this package from PyPI, 
+The algorithms are implemented in [JAX](https://docs.jax.dev), so the same code runs on CPU or GPU. Inputs may be NumPy arrays, Python lists or JAX arrays; results always come back as NumPy arrays.
+
+To install this package from PyPI,
 ```bash
 pip install bayes_mef
+```
+
+For GPU (CUDA 12, Linux), install the extra — note it pulls in several GB of NVIDIA wheels:
+```bash
+pip install "bayes_mef[cuda12]" # Optionally `cuda13` for newer GPUs
 ```
 
 ## Usage
@@ -41,6 +48,18 @@ mef_em.run(n_iter=100)
 fused_em = mef_em.fused_image.copy()
 ```
 
+### Precision
+
+Computation runs in single precision by default, which is accurate for censoring
+thresholds up to roughly 4096. Above that -- 16-bit detectors, for instance --
+the censored-Poisson expectation loses accuracy for rates near the threshold, and
+a warning is raised. Switch to double precision *before* creating any array:
+
+```python
+import bayes_mef
+bayes_mef.enable_x64()   # or set JAX_ENABLE_X64=1 in the environment
+```
+
 Additionally, one can also use the `ConventionalMEF` method as given in the paper.
 
 ```python
@@ -59,17 +78,48 @@ from bayes_mef import LaunchMEF
 launch_mef = LaunchMEF(
     ptychogram_stack,    # ptychogram shape (n_exposures, n_scans, dp_x, dp_y)
     background,          # background shape (n_exposures, n_scans, dp_x, dp_y)
-    flux_factors=None,   # if set to `None`, calculates automatically
+    times=None,          # if set to `None`, calculates automatically
     threshold=None,      # if set to `None`, calculates automatically
     update_fluxes=False, # set to `True` if you want to update fluxes
 )
 
-# runs Bayesian MEF in parallel by defining the number of CPUs `n_cpus`;
-# returns the fused diffraction patterns with shape (n_scans, dp_x, dp_y) and updated flux factors
-n_cpus = 20
+# Fuses every scan position with one vectorised program.
+# Returns the fused diffraction patterns with shape (n_scans, dp_x, dp_y)
+# and the updated flux factors.
 n_iter = 150
-fused_ptyem_stack, em_flux_factors = launch_mef.run_em(n_iter, n_cpus)
+fused_ptyem_stack, em_flux_factors = launch_mef.run_em(n_iter)
 ```
+
+On a GPU this needs no extra configuration. On CPU, JAX presents the whole host
+as a *single* device, so scan positions must be spread explicitly. Do this before
+JAX is imported:
+
+```python
+import bayes_mef
+bayes_mef.set_cpu_devices(20)     # or XLA_FLAGS=--xla_force_host_platform_device_count=20
+
+fused, fluxes = launch_mef.run_em(n_iter, ncpus=20)
+```
+
+`ncpus` now selects how many devices the scan axis is spread over rather than
+spawning processes. Use `batch_size=` to cap how many scan positions are fused at
+once if memory is tight.
+
+### Performance
+
+Fusing 256 scan positions of 6 exposures at 256x256, 150 EM iterations, on a
+64-core host with an NVIDIA H200 (`benchmarks/bench_mef.py`, single precision):
+
+| backend                        | time    | speedup |
+| ------------------------------ | ------- | ------- |
+| NumPy + joblib, 32 processes (v0.1.9) | 41.1 s  | 1.0x    |
+| JAX, CPU, 1 device             | 17.4 s  | 2.4x    |
+| JAX, CPU, 32 devices           | 14.1 s  | 2.9x    |
+| JAX, H200 GPU                  |  3.5 s  | 11.8x   |
+
+Most of the gain comes from vectorising the whole scan stack into one compiled
+program, not from spreading it across devices -- a single CPU device already
+beats 32 joblib processes. Spreading across devices adds a further ~1.2x.
 
 For a detailed usage, please check [synthetic_mef.py](scripts/synthetic_mef.py) that uses synthetic ptychography data.
 
@@ -77,20 +127,20 @@ For a detailed usage, please check [synthetic_mef.py](scripts/synthetic_mef.py) 
 
 To reproduce the ptychographic reconstruction results from the paper, please install the package in development mode and download the necessary data. This is explained in the following steps:
 
-1. Please clone this repository and create a conda environment.
+1. Please clone this repository.
    ```bash
    git clone https://github.com/microscopic-image-analysis/bayes-mef.git
    cd bayes-mef
-   conda create --name bayes-mef-venv python=3.11.5 
    ```
-2. Now activate the environment and install the *pinned* dependencies.
+2. Install the *pinned* dependencies with [uv](https://docs.astral.sh/uv/), which
+   provisions the right Python version and environment from `uv.lock`.
    ```bash
-   conda activate bayes-mef-venv
-   pip install -r requirements.txt
+   uv sync --locked --group scripts
    ```
-> [!NOTE] 
-> The package is maintained via python package manager [Poetry](https://python-poetry.org/), so instead of using `pip` for installing the package and its requirements, 
-> installation can also simply be done as `poetry install`.
+   Then prefix commands with `uv run`, e.g. `uv run python scripts/synthetic_mef.py`.
+> [!NOTE]
+> This project is managed with uv. A `requirements.txt` is still exported from
+> `uv.lock` for pip users: `pip install -r requirements.txt`.
 
 3. Download the data from [Zenodo](https://zenodo.org/doi/10.5281/zenodo.10964222) with the following command:
    ```bash
