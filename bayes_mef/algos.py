@@ -6,8 +6,34 @@ import numpy as np
 
 from . import em, kernels
 from ._compat import as_array, as_background, to_numpy, warn_if_precision_risk
+from .utils import set_fluxes, set_threshold
 
 Vector = list[float]
+
+
+def _resolve(data, threshold, times, update_fluxes=False):
+    """Fill in the censoring threshold and flux factors from the data.
+
+    Uses the same estimates as `LaunchMEF`, so a single stack does not have to
+    be handled differently from a ptychogram. Estimated flux factors are
+    relative to one exposure, so the fused image comes out on a relative scale.
+    """
+    data = np.asarray(data)
+    if threshold is None:
+        threshold = set_threshold(data)
+    if times is None:
+        times = set_fluxes(data, threshold)
+        if not update_fluxes:
+            warnings.warn(
+                "flux factors were estimated from the data. The estimate only "
+                "counts uncensored pixels, so it is compressed towards 1 "
+                "whenever censoring is substantial -- which is the case this "
+                "package exists for. Pass update_fluxes=True so EM refines "
+                "them, or pass `times` explicitly if you know the exposures.",
+                UserWarning,
+                stacklevel=3,
+            )
+    return threshold, times
 
 
 class ConventionalMEF:
@@ -18,13 +44,16 @@ class ConventionalMEF:
     Args:
         data (np.ndarray): 3D array with the first index for acquisition
             times i and the remaining for an image M x N. Therefore i x M x N
-        threshold (float): censoring threshold
-        times (list): acquisition times
+        threshold (float, optional): censoring threshold. Estimated from the
+            data when omitted.
+        times (list, optional): acquisition times or flux factors. Estimated
+            from the data when omitted, relative to one exposure.
         background (np.ndarray or scalar, optional): background with same shape
             as data or a scalar value. Defaults to 0.
     """
 
-    def __init__(self, data, threshold, times, background=None) -> None:
+    def __init__(self, data, threshold=None, times=None, background=None) -> None:
+        threshold, times = _resolve(data, threshold, times)
         self.data = as_array(data)
         self.threshold = as_array(threshold)
         self.times = as_array(times).reshape(-1)
@@ -51,8 +80,10 @@ class ExpectationMaximization(abc.ABC):
     Args:
         data (np.ndarray): 3D array with the first index for acquisition
             times i and the remaining for an image M x N. Therefore i x M x N
-        threshold (float): censoring threshold
-        times (list): acquisition times
+        threshold (float, optional): censoring threshold. Estimated from the
+            data when omitted.
+        times (list, optional): acquisition times or flux factors. Estimated
+            from the data when omitted, relative to one exposure.
         background (np.ndarray or scalar, optional): background with same shape
             as data or a scalar value. Defaults to 0.
         update_fluxes (bool, optional): re-estimate the flux factors each iteration.
@@ -63,12 +94,13 @@ class ExpectationMaximization(abc.ABC):
     def __init__(
         self,
         data,
-        threshold,
-        times,
+        threshold=None,
+        times=None,
         background=None,
         update_fluxes: bool = False,
         max_flux_iteration: int = 100,
     ) -> None:
+        threshold, times = _resolve(data, threshold, times, update_fluxes)
         self.data = as_array(data)
         self.threshold = as_array(threshold)
         self.times = as_array(times).reshape(-1)
@@ -170,8 +202,10 @@ class UncensoredEM(ExpectationMaximization):
     Args:
         data (np.ndarray): 3D array with the first index for acquisition
             times i and the remaining for an image M x N. Therefore i x M x N
-        threshold (float): censoring threshold
-        times (list): acquisition times
+        threshold (float, optional): censoring threshold. Estimated from the
+            data when omitted.
+        times (list, optional): acquisition times. Estimated from the data when
+            omitted, relative to one exposure.
         background (np.ndarray or scalar, optional): background with same shape
             as data or a scalar value. Defaults to 0.
     """
@@ -187,8 +221,10 @@ class BayesianMEF(UncensoredEM):
     Args:
         data (np.ndarray): 3D array with the first index for acquisition
             times i and the remaining for an image M x N. Therefore i x M x N
-        threshold (float): censoring threshold
-        times (list): acquisition times or flux factors
+        threshold (float, optional): censoring threshold. Estimated from the
+            data when omitted.
+        times (list, optional): acquisition times or flux factors. Estimated
+            from the data when omitted, relative to one exposure.
         background (np.ndarray or scalar, optional): background with same shape
             as data or a scalar value. Defaults to 0.
         update_fluxes (bool, optional): re-estimate the flux factors each iteration.
@@ -199,8 +235,8 @@ class BayesianMEF(UncensoredEM):
     def __init__(
         self,
         data,
-        threshold,
-        times,
+        threshold=None,
+        times=None,
         background=None,
         update_fluxes: bool = False,
         n_iter_fluxes: int = 100,
@@ -250,7 +286,8 @@ class CensoringPrior(Prior):
         censoring threshold
     """
 
-    def __init__(self, data, threshold) -> None:
+    def __init__(self, data, threshold=None) -> None:
+        threshold = set_threshold(np.asarray(data)) if threshold is None else threshold
         self.data = as_array(data)
         self.threshold = as_array(threshold)
         self.alpha = em.INIT_ALPHA

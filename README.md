@@ -15,7 +15,7 @@ To install this package from PyPI,
 pip install bayes_mef
 ```
 
-For GPU (CUDA 12, Linux), install the extra — note it pulls in several GB of NVIDIA wheels:
+For GPU (CUDA 12, Linux), install the extra:
 ```bash
 pip install "bayes_mef[cuda12]" # Optionally `cuda13` for newer GPUs
 ```
@@ -51,8 +51,7 @@ fused_em = mef_em.fused_image.copy()
 ### Precision
 
 Computation runs in single precision by default, which is accurate for censoring
-thresholds up to roughly 4096. Above that -- 16-bit detectors, for instance --
-the censored-Poisson expectation loses accuracy for rates near the threshold, and
+thresholds up to roughly 4096. Above that (16-bit detectors, for instance), the censored-Poisson expectation loses accuracy for rates near the threshold, and
 a warning is raised. Switch to double precision *before* creating any array:
 
 ```python
@@ -68,6 +67,28 @@ mef_mle = ConventionalMEF(data_saturated, threshold, times, background)
 mef_mle.mle()
 fused_mle = mef_mle.fused_image.copy()
 ```
+
+### When the exposures are not known
+
+`threshold` and `times` are optional. Omit them and they are estimated from the
+data, exactly as `LaunchMEF` does, which is the usual situation with
+experimental data:
+
+```python
+mef_em = BayesianMEF(data_saturated, background=background, update_fluxes=True)
+mef_em.run(n_iter=200)
+```
+
+Set `update_fluxes=True` whenever the flux factors are estimated. The estimate
+counts only uncensored pixels, so it is compressed towards 1 exactly when
+censoring is heavy -- the case this package exists for -- and EM has to refine
+it. On the simulation above, estimated flux factors alone correlate 0.16 with
+the ground truth, while refining them reaches 0.989, matching the run with the
+true exposure times. A warning is raised if you estimate them without refining.
+
+Estimated flux factors are relative to one exposure, so the fused image is on a
+relative rather than absolute scale.
+
 ### Fusing a whole ptychogram
 
 In ptychography, one needs to fuse diffraction patterns for every scan position.

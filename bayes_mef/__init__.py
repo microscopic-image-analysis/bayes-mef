@@ -21,8 +21,8 @@ _LAZY = {
     "BayesianMEF": "algos",
     "ConventionalMEF": "algos",
     "LaunchMEF": "mef_launcher",
-    "set_fluxes": "mef_launcher",
-    "set_threshold": "mef_launcher",
+    "set_fluxes": "utils",
+    "set_threshold": "utils",
     "enable_x64": "_compat",
 }
 

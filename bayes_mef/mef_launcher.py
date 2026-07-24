@@ -17,7 +17,7 @@ import numpy as np
 from . import em, kernels
 from ._compat import as_array, default_dtype, to_numpy, warn_if_precision_risk
 from .algos import CensoringPrior, Prior, PtychogramMean
-from .utils import corr, timeit
+from .utils import corr, set_fluxes, set_threshold, timeit
 
 # Vectorised equivalents of the Prior classes, so priors are derived per scan
 # inside the same jitted program as the EM itself.
@@ -25,6 +25,10 @@ _PRIOR_KERNELS = {
     CensoringPrior: kernels.censoring_prior,
     PtychogramMean: kernels.ptychogram_mean_prior,
 }
+
+# Re-exported so `from bayes_mef.mef_launcher import set_fluxes, set_threshold`
+# keeps working; they now live in utils so algos can use them too.
+__all__ = ["LaunchMEF", "set_fluxes", "set_threshold"]
 
 # Live buffers per scan inside the EM step: data, cens, nu, rates, rates+bg, fused.
 _LIVE_BUFFERS = 6
@@ -35,29 +39,6 @@ _FALLBACK_CHUNK_BYTES = 512 << 20
 # Share of free device memory a single chunk may occupy. The rest leaves room
 # for XLA scratch and for fragmentation between chunks.
 _MEMORY_FRACTION = 0.4
-
-
-def set_fluxes(stack, threshold, use_uncensored=True):
-    """
-    Creating fluxes on the fly when exposure times is None,
-    especially useful with experimental data due to its variations.
-    """
-    # stack should have (n_exposures, n_scans, X, Y) or (n_exposures, X, Y)
-    stack = np.asarray(stack)
-    pty = stack * (stack < threshold) if use_uncensored else stack
-
-    ind = len(pty) // 2 - 1
-    axis_last = tuple(range(1, pty.ndim))
-    fluxes = (np.sum(pty, axis=axis_last) + 1e-5) / (np.sum(pty[ind]) + 1e-5)
-
-    return list(fluxes)
-
-
-def set_threshold(stack):
-    """sets threshold based on the exposures per scan"""
-    # stack is (n_exposures, X, Y)
-    stack = np.asarray(stack)
-    return stack.max() - np.sqrt(stack.max())
 
 
 def _warn_ignored_ncpus(ncpus):

@@ -8,6 +8,29 @@ from scipy.special import gammaln
 ComplexArr = npt.NDArray[np.complexfloating]
 
 
+def set_fluxes(stack, threshold, use_uncensored=True):
+    """
+    Creating fluxes on the fly when exposure times is None,
+    especially useful with experimental data due to its variations.
+    """
+    # stack should have (n_exposures, n_scans, X, Y) or (n_exposures, X, Y)
+    stack = np.asarray(stack)
+    pty = stack * (stack < threshold) if use_uncensored else stack
+
+    ind = len(pty) // 2 - 1
+    axis_last = tuple(range(1, pty.ndim))
+    fluxes = (np.sum(pty, axis=axis_last) + 1e-5) / (np.sum(pty[ind]) + 1e-5)
+
+    return list(fluxes)
+
+
+def set_threshold(stack):
+    """sets threshold based on the exposures per scan"""
+    # stack is (n_exposures, X, Y)
+    stack = np.asarray(stack)
+    return stack.max() - np.sqrt(stack.max())
+
+
 def corr(a, b):
     """Cross-correlation coefficient."""
     return np.corrcoef(np.asarray(a).ravel(), np.asarray(b).ravel())[0, 1]

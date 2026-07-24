@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pytest
 
@@ -122,3 +124,72 @@ def test_prior_values_match_reference(scenario, assert_close):
         want()
         assert_close(got.alpha, want.alpha)
         assert_close(got.beta, want.beta)
+
+
+def test_threshold_and_times_are_estimated_when_omitted(scenario, assert_close):
+    """Omitting them must match passing the same estimates explicitly."""
+    from bayes_mef.utils import set_fluxes, set_threshold
+
+    data, background = scenario["data"], scenario["background"]
+    threshold = set_threshold(data)
+    times = set_fluxes(data, threshold)
+
+    auto = BayesianMEF(data, background=background, update_fluxes=True)
+    auto.run(10)
+    explicit = BayesianMEF(
+        data, threshold, times, background=background, update_fluxes=True
+    )
+    explicit.run(10)
+
+    assert float(np.asarray(auto.threshold)) == pytest.approx(float(threshold))
+    assert_close(auto.fused_image, explicit.fused_image)
+
+
+def test_conventional_mef_estimates_too(scenario, assert_close):
+    from bayes_mef.utils import set_fluxes, set_threshold
+
+    data, background = scenario["data"], scenario["background"]
+    threshold = set_threshold(data)
+    times = set_fluxes(data, threshold)
+
+    auto = ConventionalMEF(data, background=background)
+    auto.mle()
+    explicit = ConventionalMEF(data, threshold, times, background=background)
+    explicit.mle()
+    assert_close(auto.fused_image, explicit.fused_image)
+
+
+def test_estimated_fluxes_warn_unless_refined(scenario):
+    """The estimate is compressed by censoring, so it needs update_fluxes."""
+    data, background = scenario["data"], scenario["background"]
+
+    with pytest.warns(UserWarning, match="flux factors were estimated"):
+        BayesianMEF(data, background=background)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        BayesianMEF(data, background=background, update_fluxes=True)
+
+
+def test_estimated_fluxes_plus_refinement_recover_the_truth():
+    """Auto flux factors are only a starting point; EM has to fix them up."""
+    from skimage.data import camera
+
+    rng = np.random.default_rng(0)
+    truth = camera().astype(float)
+    times, background, threshold = np.array([0.1, 1.0, 10.0]), 60.0, 1500.0
+    data = np.clip(
+        [rng.poisson(t * truth + background) for t in times], None, threshold
+    ).astype(float)
+
+    def corr(f):
+        return float(np.corrcoef(np.asarray(f).ravel(), truth.ravel())[0, 1])
+
+    refined = BayesianMEF(data, background=background, update_fluxes=True)
+    refined.run(200)
+    assert corr(refined.fused_image) > 0.95
+
+    with pytest.warns(UserWarning):
+        raw = BayesianMEF(data, background=background)
+    raw.run(200)
+    assert corr(raw.fused_image) < 0.5  # documents why the warning exists
