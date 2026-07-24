@@ -68,9 +68,12 @@ mef_mle = ConventionalMEF(data_saturated, threshold, times, background)
 mef_mle.mle()
 fused_mle = mef_mle.fused_image.copy()
 ```
-### Parallelized implementatation
+### Fusing a whole ptychogram
 
-In ptychography, one needs to fuse diffraction patterns for every scan position. Processing this for data over all scan positions can be slow for an iterative algorithm. Therefore, one can use the parallelized implementation for MEF `LaunchMEF`. Check the example below
+In ptychography, one needs to fuse diffraction patterns for every scan position.
+Processing this for data over all scan positions can be slow for an iterative
+algorithm, so `LaunchMEF` fuses every scan position with a single vectorised
+program. The same code runs on CPU or GPU.
 
 ```python
 from bayes_mef import LaunchMEF
@@ -90,36 +93,37 @@ n_iter = 150
 fused_ptyem_stack, em_flux_factors = launch_mef.run_em(n_iter)
 ```
 
-On a GPU this needs no extra configuration. On CPU, JAX presents the whole host
-as a *single* device, so scan positions must be spread explicitly. Do this before
-JAX is imported:
+There are no worker processes to size any more, so the old `n_cpus` argument is
+accepted but ignored (it warns, so existing scripts keep running).
+
+#### Memory
+
+Scan positions are fused in chunks, and only the current chunk is held on the
+device, so a stack far larger than device memory still works. The chunk size is
+chosen from the device's free memory, but you can set it yourself when fusing
+alongside other work, or if you hit a `MemoryError`:
 
 ```python
-import bayes_mef
-bayes_mef.set_cpu_devices(20)     # or XLA_FLAGS=--xla_force_host_platform_device_count=20
-
-fused, fluxes = launch_mef.run_em(n_iter, ncpus=20)
+fused, fluxes = launch_mef.run_em(n_iter, batch_size=8)
 ```
 
-`ncpus` now selects how many devices the scan axis is spread over rather than
-spawning processes. Use `batch_size=` to cap how many scan positions are fused at
-once if memory is tight.
+Lower `batch_size` reduces peak memory; higher values are faster up to the point
+where the device is saturated. Results do not depend on it.
 
 ### Performance
 
 Fusing 256 scan positions of 6 exposures at 256x256, 150 EM iterations, on a
 64-core host with an NVIDIA H200 (`benchmarks/bench_mef.py`, single precision):
 
-| backend                        | time    | speedup |
-| ------------------------------ | ------- | ------- |
+| backend                               | time    | speedup |
+| ------------------------------------- | ------- | ------- |
 | NumPy + joblib, 32 processes (v0.1.9) | 41.1 s  | 1.0x    |
-| JAX, CPU, 1 device             | 17.4 s  | 2.4x    |
-| JAX, CPU, 32 devices           | 14.1 s  | 2.9x    |
-| JAX, H200 GPU                  |  3.5 s  | 11.8x   |
+| JAX, CPU                              | 17.4 s  | 2.4x    |
+| JAX, H200 GPU                         |  3.5 s  | 11.8x   |
 
-Most of the gain comes from vectorising the whole scan stack into one compiled
-program, not from spreading it across devices -- a single CPU device already
-beats 32 joblib processes. Spreading across devices adds a further ~1.2x.
+The gain comes from vectorising the whole scan stack into one compiled program:
+plain JAX on CPU already beats 32 joblib worker processes, which is why there is
+no longer a separate parallel implementation to choose between.
 
 For a detailed usage, please check [synthetic_mef.py](scripts/synthetic_mef.py) that uses synthetic ptychography data.
 

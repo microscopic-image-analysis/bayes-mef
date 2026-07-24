@@ -36,6 +36,9 @@ constructor signatures, `run()` semantics and `.fused_image` attribute.
   the input dtype, so integer counts rounded the estimate at every iteration;
   inputs are now always promoted to float.
 - `LaunchMEF` accepts `background=None`.
+- `LaunchMEF` no longer uploads the whole ptychogram to the device before
+  chunking, which exhausted GPU memory on realistic stacks while appearing to
+  work on CPU.
 - The `n_init` warm start ran twice during `BayesianMEF` construction. The result
   was identical, so this is purely a 2x saving in construction cost.
 - `utils.corr` and `utils.crop_image` accept JAX arrays.

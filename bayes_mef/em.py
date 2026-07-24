@@ -72,11 +72,14 @@ def censored_indices(data, threshold):
     under `jit` and `vmap`; repeated targets therefore always scatter the same
     value. `has_cens` handles images with no censored pixels at all.
     """
-    cens = np.asarray(data) >= float(np.asarray(threshold))
-    batched = cens.ndim == 4
-    rows = cens.reshape(len(cens), -1) if batched else cens.reshape(1, -1)
+    data = np.asarray(data)
+    t = float(np.asarray(threshold))
+    batched = data.ndim == 4
 
-    found = [np.flatnonzero(row) for row in rows]
+    # One image at a time: comparing the whole stack at once would allocate a
+    # boolean array the size of the stack, which for a ptychogram is many GB.
+    images = data if batched else data[None]
+    found = [np.flatnonzero(np.asarray(img).reshape(-1) >= t) for img in images]
     n_max = max(1, max(len(f) for f in found))
 
     idx = np.zeros((len(found), n_max), dtype=np.int32)

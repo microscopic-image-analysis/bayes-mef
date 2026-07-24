@@ -1,8 +1,6 @@
 """Bayesian multi-exposure image fusion for robust HDR imaging."""
 
 import importlib
-import os
-import sys
 from importlib.metadata import PackageNotFoundError, version
 
 __all__ = [
@@ -10,7 +8,6 @@ __all__ = [
     "ConventionalMEF",
     "LaunchMEF",
     "enable_x64",
-    "set_cpu_devices",
     "set_fluxes",
     "set_threshold",
 ]
@@ -30,32 +27,11 @@ _LAZY = {
 }
 
 
-def set_cpu_devices(n: int) -> None:
-    """Expose `n` CPU devices to JAX so scan positions can be sharded across cores.
-
-    JAX otherwise presents the whole host as a single device, which leaves most
-    cores idle. Must be called before JAX initialises its backend -- i.e. before
-    the first `import jax` or any bayes_mef class. Setting
-    ``XLA_FLAGS=--xla_force_host_platform_device_count=<n>`` in the environment
-    does the same thing and is the more reliable option for scripts.
-    """
-    if "jax" in sys.modules:
-        raise RuntimeError(
-            "jax is already imported, so its backend may be initialised and the "
-            "device count can no longer change. Call set_cpu_devices() earlier, "
-            "or set XLA_FLAGS=--xla_force_host_platform_device_count="
-            f"{n} in the environment."
-        )
-    flag = f"--xla_force_host_platform_device_count={n}"
-    existing = os.environ.get("XLA_FLAGS", "")
-    os.environ["XLA_FLAGS"] = f"{existing} {flag}".strip()
-
-
 def __getattr__(name):
-    """Import submodules on first use so JAX is not loaded by `import bayes_mef`.
+    """Import submodules on first use, so `import bayes_mef` does not load JAX.
 
-    This is what makes `set_cpu_devices` usable: it has to run before the JAX
-    backend initialises.
+    Keeps the import cheap, and leaves a window for callers to configure JAX
+    (precision, platform) before the backend initialises.
     """
     if name in _LAZY:
         module = importlib.import_module(f".{_LAZY[name]}", __name__)

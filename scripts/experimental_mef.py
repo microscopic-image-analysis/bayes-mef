@@ -6,17 +6,7 @@ import os
 import h5py
 import numpy as np
 
-import bayes_mef
-
-# JAX sees the host as one device unless told otherwise; expose one per core so
-# scan positions actually spread out. Must run before jax is imported.
-bayes_mef.set_cpu_devices(35)
-
-from bayes_mef.mef_launcher import (
-    LaunchMEF,
-    set_fluxes,
-    set_threshold,
-)
+from bayes_mef.mef_launcher import LaunchMEF, set_fluxes, set_threshold
 
 
 def load_data(filepath, pty_key="ptychogram"):
@@ -70,7 +60,6 @@ if __name__ == "__main__":
 
     # params for Parallel EM method
     em_niter = 200  # n_iter for Full EM
-    ncpus = 35  # parallel computation
 
     # instantiate the MEF launcher, letting it estimate
     # times and threshold internally
@@ -98,5 +87,4 @@ if __name__ == "__main__":
         mle_switch=True,
         em_switch=True,
         n_iter_em=em_niter,
-        ncpus_em=ncpus,
     )

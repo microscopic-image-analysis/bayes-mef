@@ -1,8 +1,8 @@
 """Vectorised MEF over ptychographic scan positions.
 
-Scan positions are fused with a single `vmap`ped, jitted EM program rather than
-one process per scan. On a multi-device host (see `bayes_mef.set_cpu_devices`)
-the scan axis is additionally spread across devices with `pmap`.
+Scan positions are fused by a single `vmap`ped, jitted EM program, which runs
+unchanged on CPU or GPU. Scans are processed in chunks so that device memory
+stays bounded regardless of how large the stack is.
 """
 
 import os
@@ -15,7 +15,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from . import em, kernels
-from ._compat import as_array, as_background, to_numpy, warn_if_precision_risk
+from ._compat import as_array, default_dtype, to_numpy, warn_if_precision_risk
 from .algos import CensoringPrior, Prior, PtychogramMean
 from .utils import corr, timeit
 
@@ -28,7 +28,13 @@ _PRIOR_KERNELS = {
 
 # Live buffers per scan inside the EM step: data, cens, nu, rates, rates+bg, fused.
 _LIVE_BUFFERS = 6
-_TARGET_CHUNK_BYTES = 512e6
+
+# Used when the device does not report its memory (notably CPU).
+_FALLBACK_CHUNK_BYTES = 512 << 20
+
+# Share of free device memory a single chunk may occupy. The rest leaves room
+# for XLA scratch and for fragmentation between chunks.
+_MEMORY_FRACTION = 0.4
 
 
 def set_fluxes(stack, threshold, use_uncensored=True):
@@ -54,51 +60,78 @@ def set_threshold(stack):
     return stack.max() - np.sqrt(stack.max())
 
 
+def _warn_ignored_ncpus(ncpus):
+    """`ncpus` predates the JAX rewrite and no longer does anything."""
+    if ncpus is None:
+        return
+    warnings.warn(
+        f"ncpus={ncpus} is ignored. Scan positions are now fused by a single "
+        "vectorised program that uses the whole CPU (or the GPU, if one is "
+        "available), so there are no worker processes to size. Use batch_size "
+        "to control how many scan positions are fused at once if you need to "
+        "cap memory.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+
+def _chunk_budget_bytes():
+    """How many bytes one chunk may hold live on the device."""
+    try:
+        stats = jax.local_devices()[0].memory_stats() or {}
+    except Exception:  # noqa: BLE001 - memory_stats is optional per backend
+        stats = {}
+
+    limit = stats.get("bytes_limit")
+    if not limit:
+        return _FALLBACK_CHUNK_BYTES
+    free = max(int(limit) - int(stats.get("bytes_in_use", 0)), 0)
+    return max(int(free * _MEMORY_FRACTION), _FALLBACK_CHUNK_BYTES)
+
+
 def _default_batch_size(n_scans, per_scan_shape, itemsize):
     per_scan = int(np.prod(per_scan_shape)) * itemsize * _LIVE_BUFFERS
-    return int(np.clip(_TARGET_CHUNK_BYTES // max(per_scan, 1), 1, n_scans))
+    return int(np.clip(_chunk_budget_bytes() // max(per_scan, 1), 1, n_scans))
 
 
-def _pad_axis0(x, multiple):
-    """Pad the scan axis so it divides evenly across devices; sliced off after."""
-    remainder = -x.shape[0] % multiple
-    if remainder == 0:
-        return x
-    pad = [(0, remainder)] + [(0, 0)] * (x.ndim - 1)
-    return jnp.pad(x, pad, mode="edge")
+def _map_over_scans(per_scan, mapped, shared, n_scans, batch_size):
+    """Run `per_scan` over every scan position, one chunk at a time.
 
+    `mapped` holds (host array, cast) pairs batched along the scan axis;
+    `shared` holds device arrays broadcast to every scan. `vmap` vectorises the
+    scans within a chunk and `jit` compiles the whole thing once.
 
-def _map_over_scans(per_scan, mapped, shared, n_scans, batch_size, n_devices):
-    """Run `per_scan` over every scan position, chunked and spread over devices.
-
-    `mapped` are arrays batched along the scan axis; `shared` are broadcast to
-    every scan. Within a chunk, `vmap` vectorises the scans and -- when more
-    than one device is visible -- `pmap` spreads them across devices. `pmap` is
-    used rather than explicit shardings because the EM's nested `lax.scan`
-    defeats XLA's sharding propagation.
+    Mapped arrays stay in host memory and only the current chunk is transferred.
+    A ptychogram stack is easily tens of GB, so uploading it whole would exhaust
+    device memory however small `batch_size` is: chunking has to bound residency,
+    not just the width of the computation.
     """
     in_axes = (0,) * len(mapped) + (None,) * len(shared)
-    vectorised = jax.vmap(per_scan, in_axes=in_axes)
+    runner = jax.jit(jax.vmap(per_scan, in_axes=in_axes))
 
-    if n_devices > 1:
-        runner = jax.pmap(vectorised, in_axes=in_axes)
-    else:
-        runner = jax.jit(vectorised)
-
+    dtype = default_dtype()
     outputs = []
     for start in range(0, n_scans, batch_size):
-        chunk = [a[start : start + batch_size] for a in mapped]
+        chunk = [a[start : start + batch_size] for a, _ in mapped]
         size = chunk[0].shape[0]
 
-        if n_devices > 1:
-            # (n_devices, per_device, ...) so pmap maps devices and vmap scans.
-            chunk = [_pad_axis0(a, n_devices) for a in chunk]
-            chunk = [a.reshape(n_devices, -1, *a.shape[1:]) for a in chunk]
+        # Transfer (and cast) only this chunk.
+        chunk = [
+            jnp.asarray(a, dtype) if cast else jnp.asarray(a)
+            for a, (_, cast) in zip(chunk, mapped, strict=True)
+        ]
 
-        out = runner(*chunk, *shared)
-        if n_devices > 1:
-            out = jax.tree.map(lambda a: a.reshape(-1, *a.shape[2:]), out)
-        outputs.append(jax.tree.map(lambda a, n=size: to_numpy(a)[:n], out))
+        try:
+            out = runner(*chunk, *shared)
+            outputs.append(jax.tree.map(lambda a, n=size: to_numpy(a)[:n], out))
+        except jax.errors.JaxRuntimeError as exc:
+            if "RESOURCE_EXHAUSTED" not in str(exc):
+                raise
+            raise MemoryError(
+                f"ran out of device memory fusing {size} scan positions at once. "
+                f"Pass a smaller batch_size to run_em() (currently {batch_size}), "
+                "or free memory held by other work on the device."
+            ) from exc
 
     return jax.tree.map(lambda *xs: np.concatenate(xs, axis=0), *outputs)
 
@@ -117,8 +150,14 @@ def _fuse_one(
     n_init,
     update_fluxes,
     max_flux,
+    prior_kernel=None,
 ):
     """Full EM for a single scan position; vmapped over the scan axis."""
+    if prior_kernel is not None:
+        # Derived here rather than up front, so the prior never materialises a
+        # stack-sized array on the device.
+        alpha, beta = prior_kernel(data, threshold)
+
     state = em.init_bayesian_impl(data, threshold, times, background, n_init=n_init)
     state, _ = em.advance_bayesian_impl(
         state,
@@ -169,86 +208,71 @@ class LaunchMEF:
         )
 
     def _prepare(self, ncpus, batch_size):
-        data = as_array(self.pty_stack)
-        background = as_background(self.background)
+        # `data` and a per-scan `background` stay in host memory; only the
+        # current chunk is transferred (see _map_over_scans).
+        data = np.asarray(self.pty_stack)
+        background = np.asarray(self.background)
         threshold = as_array(self.threshold)
         times = as_array(self.times).reshape(-1)
 
         warn_if_precision_risk(threshold)
 
-        n_devices = self._device_count(ncpus)
+        _warn_ignored_ncpus(ncpus)
         n_scans = data.shape[0]
         if batch_size is None:
             batch_size = _default_batch_size(
-                n_scans, data.shape[1:], data.dtype.itemsize
+                n_scans, data.shape[1:], np.dtype(default_dtype()).itemsize
             )
-        # keep chunks a whole multiple of the device count where possible
-        batch_size = max(n_devices, batch_size - batch_size % n_devices or batch_size)
-
-        return data, background, threshold, times, n_scans, batch_size, n_devices
-
-    @staticmethod
-    def _device_count(ncpus):
-        available = jax.device_count()
-        if ncpus is None:
-            return available
-        if ncpus > available:
-            warnings.warn(
-                f"requested {ncpus} devices but JAX sees {available}. Call "
-                "bayes_mef.set_cpu_devices() before importing jax, or set "
-                f"XLA_FLAGS=--xla_force_host_platform_device_count={ncpus}, to "
-                "spread scan positions across CPU cores.",
-                UserWarning,
-                stacklevel=3,
-            )
-        return min(ncpus, available)
+        return data, background, threshold, times, n_scans, max(int(batch_size), 1)
 
     def _priors(self, data, threshold, n_scans):
-        """Per-scan gamma prior parameters, batched along the scan axis."""
+        """Gamma prior parameters for each scan.
+
+        Returns (kernel, alpha, beta). A non-None kernel is applied per scan
+        *inside* the fused program, so the prior never materialises a
+        stack-sized array on the device; alpha and beta are then just the
+        defaults. Unknown Prior subclasses fall back to a host loop, which does
+        produce per-scan arrays, but they stay in host memory and are chunked
+        with everything else.
+        """
+        default = (
+            np.full(n_scans, em.INIT_ALPHA),
+            np.full(n_scans, em.INIT_BETA),
+        )
         if self.prior is None:
-            return (
-                jnp.full((n_scans,), em.INIT_ALPHA, data.dtype),
-                jnp.full((n_scans,), em.INIT_BETA, data.dtype),
-            )
+            return None, *default
 
         assert issubclass(self.prior, Prior)
         kernel = _PRIOR_KERNELS.get(self.prior)
         if kernel is not None:
-            alpha, beta = jax.vmap(kernel, in_axes=(0, None))(data, threshold)
-        else:
-            # Unknown user subclass: derive it on the host, one scan at a time.
-            pairs = []
-            for scan in np.asarray(data):
-                p = self.prior(scan, float(threshold))
-                p()
-                pairs.append((p.alpha, p.beta))
-            alpha = jnp.stack(
-                [jnp.broadcast_to(as_array(a), scan.shape[1:]) for a, _ in pairs]
-            )
-            beta = jnp.stack(
-                [jnp.broadcast_to(as_array(b), scan.shape[1:]) for _, b in pairs]
-            )
-        return alpha, beta
+            return kernel, *default
+
+        alphas, betas = [], []
+        for scan in data:
+            p = self.prior(scan, float(threshold))
+            p()
+            alphas.append(np.broadcast_to(np.asarray(p.alpha), scan.shape[1:]))
+            betas.append(np.broadcast_to(np.asarray(p.beta), scan.shape[1:]))
+        return None, np.stack(alphas), np.stack(betas)
 
     @timeit
     def run_mle(self):
         """runs MLE"""
-        data = as_array(self.pty_stack)
-        background = as_background(self.background)
-        threshold = as_array(self.threshold)
-        times = as_array(self.times).reshape(-1)
+        data, background, threshold, times, n_scans, batch_size = self._prepare(
+            None, None
+        )
 
         def per_scan(scan, bg):
             return kernels.mle_fuse(scan, kernels.label_f(scan, threshold), times, bg)
 
         if background.ndim == data.ndim:
-            mapped, shared = (data, background), ()
+            mapped = ((data, True), (background, True))
+            shared = ()
         else:
-            mapped, shared = (data,), (background,)
+            mapped = ((data, True),)
+            shared = (as_array(background),)
 
-        pty_mle = _map_over_scans(
-            per_scan, mapped, shared, data.shape[0], data.shape[0], 1
-        )
+        pty_mle = _map_over_scans(per_scan, mapped, shared, n_scans, batch_size)
 
         if self.pty_noisefree_stack is not None:
             mle_corr = corr(pty_mle[0], self.pty_noisefree_stack[0])
@@ -263,26 +287,29 @@ class LaunchMEF:
 
         Args:
             n_iter: EM iterations per scan position.
-            ncpus: number of devices to spread scan positions over. Requires
-                `bayes_mef.set_cpu_devices()` or `XLA_FLAGS` to expose more than
-                one CPU device; it no longer spawns processes.
+            ncpus: ignored, kept so existing call sites keep working. Fusion is
+                a single vectorised program now, with no worker processes.
             batch_size: scan positions fused at once. Defaults to a size that
-                keeps roughly 512 MB of intermediates live.
+                fits the device's free memory; lower it if you hit MemoryError.
         """
-        data, background, threshold, times, n_scans, batch_size, n_devices = (
-            self._prepare(ncpus, batch_size)
+        data, background, threshold, times, n_scans, batch_size = self._prepare(
+            ncpus, batch_size
         )
-        alpha, beta = self._priors(data, threshold, n_scans)
-
-        # A per-scan (4-D) background is mapped; a shared (3-D) one is broadcast.
+        prior_kernel, alpha, beta = self._priors(data, threshold, n_scans)
         cens_idx, has_cens = em.censored_indices(data, threshold)
-        cens_idx, has_cens = jnp.asarray(cens_idx), jnp.asarray(has_cens)
 
-        mapped = (data, alpha, beta, cens_idx, has_cens)
+        mapped = (
+            (data, True),
+            (alpha, True),
+            (beta, True),
+            (cens_idx, False),
+            (has_cens, False),
+        )
+        # A per-scan (4-D) background is mapped; a shared (3-D) one is broadcast.
         if background.ndim == data.ndim:
-            mapped, shared = (*mapped, background), ()
+            mapped, shared = (*mapped, (background, True)), ()
         else:
-            shared = (background,)
+            shared = (as_array(background),)
 
         pty_em, em_fluxes = self._fuse(
             mapped,
@@ -294,7 +321,7 @@ class LaunchMEF:
             self.update_fluxes,
             n_scans,
             batch_size,
-            n_devices,
+            prior_kernel,
         )
 
         # Re-run with a fixed average of the corrected fluxes.
@@ -311,7 +338,7 @@ class LaunchMEF:
                 False,
                 n_scans,
                 batch_size,
-                n_devices,
+                prior_kernel,
             )
 
         if self.pty_noisefree_stack is not None:
@@ -332,10 +359,11 @@ class LaunchMEF:
         update_fluxes,
         n_scans,
         batch_size,
-        n_devices,
+        prior_kernel=None,
     ):
         per_scan = partial(
             _fuse_one,
+            prior_kernel=prior_kernel,
             threshold=threshold,
             times=times,
             n_iter=n_iter,
@@ -343,7 +371,7 @@ class LaunchMEF:
             update_fluxes=update_fluxes,
             max_flux=as_array(n_iter),
         )
-        return _map_over_scans(per_scan, mapped, shared, n_scans, batch_size, n_devices)
+        return _map_over_scans(per_scan, mapped, shared, n_scans, batch_size)
 
     def save_result(self, filepath, pty_fused, fluxes_em, params, pty_key, save_misc):
         """saves result as hdf5"""

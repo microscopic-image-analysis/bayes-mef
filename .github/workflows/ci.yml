@@ -28,11 +28,6 @@ jobs:
         env:
           JAX_ENABLE_X64: "1"
         run: uv run pytest -q
-      - name: Test (multi-device CPU)
-        env:
-          JAX_ENABLE_X64: "1"
-          XLA_FLAGS: --xla_force_host_platform_device_count=4
-        run: uv run pytest -q tests/test_launcher.py
 
   requirements-drift:
     runs-on: ubuntu-latest

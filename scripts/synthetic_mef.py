@@ -5,17 +5,8 @@ import os
 
 import numpy as np
 
-import bayes_mef
-
-# JAX sees the host as one device unless told otherwise; expose one per core so
-# scan positions actually spread out. Must run before jax is imported.
-bayes_mef.set_cpu_devices(35)
-
 from bayes_mef.mef_launcher import LaunchMEF
-from scripts.synthetic_data_generation import (
-    save_ground_truth,
-    simulate_ptychogram,
-)
+from scripts.synthetic_data_generation import save_ground_truth, simulate_ptychogram
 
 
 def main(PATH, rho=0.5):
@@ -55,9 +46,6 @@ def main(PATH, rho=0.5):
     ptychogram_noisy = simdata["ptychogram_noisy"]
     background = simdata["background"]
 
-    # Parallel EM by setting the no. of CPU cores based on your computer
-    ncpus = 35  # parallel computation
-
     # save noisefree data
     noisefree_filename = f"truth/truth_synthetic_rho{rho}.hdf5"
     filepath_noisfree = os.path.join(PATH, noisefree_filename)
@@ -86,7 +74,6 @@ def main(PATH, rho=0.5):
         mle_switch=True,
         em_switch=True,
         n_iter_em=200,
-        ncpus_em=ncpus,
         save_misc=True,
         separate_fused_dir=True,
     )

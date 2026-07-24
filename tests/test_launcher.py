@@ -136,9 +136,52 @@ def test_shared_3d_and_per_scan_4d_background_agree(stack, assert_close):
     assert_close(per_scan, shared)
 
 
-def test_ncpus_beyond_device_count_warns(stack):
-    with pytest.warns(UserWarning, match="set_cpu_devices"):
-        _launch(stack).run_em(1, ncpus=9999)
+def test_ncpus_is_ignored_but_accepted(stack, assert_close):
+    """Old call sites pass ncpus positionally; it must not break them."""
+    with pytest.warns(DeprecationWarning, match="ncpus=6 is ignored"):
+        got, _ = _launch(stack).run_em(N_ITER, 6)
+
+    baseline, _ = _launch(stack).run_em(N_ITER)
+    assert_close(got, baseline)
+
+
+def test_chunking_bounds_device_transfers(stack, monkeypatch):
+    """The stack must never be uploaded whole, however small `batch_size` is.
+
+    A ptychogram is easily tens of GB, so transferring it up front exhausts
+    device memory before the first chunk runs. That is invisible on CPU, where
+    host memory is far larger, which is why this is asserted rather than assumed.
+    """
+    import jax.numpy as jnp
+
+    from bayes_mef import mef_launcher
+
+    seen = []
+    real_asarray = jnp.asarray
+
+    def spy(a, *args, **kwargs):
+        out = real_asarray(a, *args, **kwargs)
+        if getattr(out, "ndim", 0) >= 3:
+            seen.append(int(np.prod(out.shape)))
+        return out
+
+    monkeypatch.setattr(mef_launcher.jnp, "asarray", spy)
+    _launch(stack).run_em(1, batch_size=1)
+
+    n_exposures, n_scans = stack["pty_stack"].shape[:2]
+    per_scan = n_exposures * int(np.prod(stack["pty_stack"].shape[2:]))
+    assert seen, "expected at least one device transfer"
+    assert max(seen) < per_scan * n_scans, (
+        f"largest transfer was {max(seen)} elements but one scan is {per_scan}; "
+        "the whole stack was uploaded up front"
+    )
+
+
+def test_batch_size_defaults_to_something_usable(stack):
+    from bayes_mef.mef_launcher import _default_batch_size
+
+    n = _default_batch_size(64, (6, 256, 256), 4)
+    assert 1 <= n <= 64
 
 
 def test_outputs_are_numpy(stack):
