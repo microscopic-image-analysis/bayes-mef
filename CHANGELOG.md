@@ -32,6 +32,15 @@ constructor signatures, `run()` semantics and `.fused_image` attribute.
   towards 1 when censoring is heavy, so a warning asks for `update_fluxes=True`,
   which refines it: on the README simulation, estimated flux factors alone
   correlate 0.16 with the truth against 0.989 once refined.
+- **A second flux initialiser**, selected with `flux_init` on the classes and
+  `LaunchMEF`, or with `background=` and `common_mask=True` on `set_fluxes`
+  directly. `"matched"` subtracts the background and uses only pixels uncensored
+  in every exposure; on a simulated ptychogram with true ratios 0.25:0.5:1:2:4:8
+  it returns 0.24:0.50:1.00:2.01:4.03:8.11 against the default's
+  0.58:1.16:1.00:1.06:1.35:1.19. On the README simulation it matches knowing the
+  true exposures (0.989) and converges in 5 iterations rather than 55 with
+  refinement. The default remains `"uncensored"`, bit-identical to v0.1.9, since
+  published results depend on it.
 - `set_fluxes` and `set_threshold` moved to `bayes_mef.utils` so the single
   image classes can use them. They are still importable from
   `bayes_mef.mef_launcher` and from the top level.

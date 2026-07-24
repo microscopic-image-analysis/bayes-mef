@@ -16,7 +16,7 @@ import numpy as np
 
 from . import em, kernels
 from ._compat import as_array, default_dtype, to_numpy, warn_if_precision_risk
-from .algos import CensoringPrior, Prior, PtychogramMean
+from .algos import CensoringPrior, Prior, PtychogramMean, estimate_fluxes
 from .utils import corr, set_fluxes, set_threshold, timeit
 
 # Vectorised equivalents of the Prior classes, so priors are derived per scan
@@ -170,20 +170,32 @@ class LaunchMEF:
         prior: type[Prior] | None = None,
         pty_noisefree_stack=None,
         update_fluxes: bool = False,
+        flux_init: str = "uncensored",
     ) -> None:
         pty_stack = np.asarray(pty_stack)
         assert pty_stack.ndim == 4, "expected (n_exposures, n_scans, X, Y)"
 
         self.threshold = set_threshold(pty_stack) if threshold is None else threshold
-        self.times = set_fluxes(pty_stack, self.threshold) if times is None else times
         self.prior = prior
         self.pty_noisefree_stack = pty_noisefree_stack
         self.update_fluxes = update_fluxes
 
+        background = np.zeros(1) if background is None else np.asarray(background)
+
+        if times is None:
+            # The stack is still (n_exposures, n_scans, X, Y) here, so a shared
+            # (n_exposures, X, Y) background needs a scan axis to broadcast.
+            bg = (
+                background[:, None]
+                if background.ndim == pty_stack.ndim - 1
+                else background
+            )
+            times = estimate_fluxes(pty_stack, self.threshold, flux_init, bg)
+        self.times = times
+
         # move the scan axis first: (n_scans, n_exposures, X, Y)
         self.pty_stack = np.moveaxis(pty_stack, 1, 0)
 
-        background = np.zeros(1) if background is None else np.asarray(background)
         self.background = (
             np.moveaxis(background, 1, 0) if background.ndim == 4 else background
         )

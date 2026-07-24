@@ -193,3 +193,83 @@ def test_estimated_fluxes_plus_refinement_recover_the_truth():
         raw = BayesianMEF(data, background=background)
     raw.run(200)
     assert corr(raw.fused_image) < 0.5  # documents why the warning exists
+
+
+def test_default_flux_estimator_is_unchanged():
+    """The default is the v0.1.9 estimator; published results depend on it."""
+    from bayes_mef.utils import set_fluxes
+
+    rng = np.random.default_rng(0)
+    for shape in [(3, 32, 32), (6, 5, 24, 24)]:
+        stack = np.clip(rng.poisson(400, shape), None, 500).astype(float)
+        threshold = 500.0
+
+        for use_uncensored in (True, False):
+            pty = stack * (stack < threshold) if use_uncensored else stack
+            ind = len(pty) // 2 - 1
+            axis_last = tuple(range(1, pty.ndim))
+            expected = (np.sum(pty, axis=axis_last) + 1e-5) / (np.sum(pty[ind]) + 1e-5)
+            got = set_fluxes(stack, threshold, use_uncensored)
+            np.testing.assert_array_equal(np.asarray(got), expected)
+
+
+def test_matched_initialiser_recovers_true_flux_ratios():
+    """Background subtraction plus a common mask fixes both sources of bias."""
+    from bayes_mef.utils import set_fluxes
+
+    rng = np.random.default_rng(0)
+    n = 48
+    y, x = np.indices((n, n)) - n / 2
+    truth = 1e6 * np.exp(-(x**2 + y**2) / 8.0) + 5e3 / (1.0 + x**2 + y**2)
+
+    times = np.array([2.0**b for b in range(7, 13)])
+    background, threshold = 10.0, 65279.0
+    data = np.clip(
+        [rng.poisson(t * truth / times.max()) + background for t in times],
+        None,
+        threshold,
+    ).astype(float)
+
+    ind = len(times) // 2 - 1
+    expected = times / times[ind]
+
+    matched = np.asarray(
+        set_fluxes(data, threshold, background=background, common_mask=True)
+    )
+    np.testing.assert_allclose(matched, expected, rtol=0.05)
+
+    # the default is the one that needs refining
+    default = np.asarray(set_fluxes(data, threshold))
+    assert np.max(np.abs(default - expected) / expected) > 0.5
+
+
+def test_matched_initialiser_needs_no_refinement():
+    """`matched` alone should match knowing the true exposure times."""
+    from skimage.data import camera
+
+    rng = np.random.default_rng(0)
+    truth = camera().astype(float)
+    times, background, threshold = np.array([0.1, 1.0, 10.0]), 60.0, 1500.0
+    data = np.clip(
+        [rng.poisson(t * truth + background) for t in times], None, threshold
+    ).astype(float)
+
+    def corr(f):
+        return float(np.corrcoef(np.asarray(f).ravel(), truth.ravel())[0, 1])
+
+    em = BayesianMEF(data, background=background, flux_init="matched")
+    em.run(50)
+    assert corr(em.fused_image) > 0.98
+
+
+def test_matched_initialiser_does_not_warn(scenario):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        BayesianMEF(
+            scenario["data"], background=scenario["background"], flux_init="matched"
+        )
+
+
+def test_unknown_flux_init_is_rejected(scenario):
+    with pytest.raises(ValueError, match="flux_init must be one of"):
+        BayesianMEF(scenario["data"], flux_init="nonsense")

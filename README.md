@@ -75,16 +75,31 @@ data, exactly as `LaunchMEF` does, which is the usual situation with
 experimental data:
 
 ```python
-mef_em = BayesianMEF(data_saturated, background=background, update_fluxes=True)
-mef_em.run(n_iter=200)
+mef_em = BayesianMEF(data_saturated, background=background, flux_init="matched")
+mef_em.run(n_iter=100)
 ```
 
-Set `update_fluxes=True` whenever the flux factors are estimated. The estimate
-counts only uncensored pixels, so it is compressed towards 1 exactly when
-censoring is heavy -- the case this package exists for -- and EM has to refine
-it. On the simulation above, estimated flux factors alone correlate 0.16 with
-the ground truth, while refining them reaches 0.989, matching the run with the
-true exposure times. A warning is raised if you estimate them without refining.
+There are two initialisers, selected with `flux_init`:
+
+- `"uncensored"` (default) sums each exposure over its own uncensored pixels.
+  This is the v0.1.9 behaviour. It undercounts long exposures, whose brightest
+  pixels are exactly the censored ones, so the ratios collapse towards 1 when
+  censoring is heavy. It is a starting point for `update_fluxes=True`, not an
+  answer, and a warning is raised if you use it without refining.
+- `"matched"` subtracts the background and uses only pixels uncensored in
+  *every* exposure, so the exposures are compared like with like.
+
+On the simulation above, whose true exposure ratios are 1:10:100:
+
+| flux factors                          | corr. with truth | iterations to 0.98 |
+| ------------------------------------- | ---------------- | ------------------ |
+| true exposure times                   | 0.989            | 5                  |
+| `"uncensored"`                        | 0.161            | never              |
+| `"uncensored"` + `update_fluxes=True` | 0.989            | 55                 |
+| `"matched"`                           | 0.989            | 5                  |
+
+`"matched"` is as good as knowing the exposures and needs no refinement. The
+default is kept for backwards compatibility, since published results rely on it.
 
 Estimated flux factors are relative to one exposure, so the fused image is on a
 relative rather than absolute scale.
@@ -105,6 +120,7 @@ launch_mef = LaunchMEF(
     times=None,          # if set to `None`, calculates automatically
     threshold=None,      # if set to `None`, calculates automatically
     update_fluxes=False, # set to `True` if you want to update fluxes
+    flux_init="matched", # better estimate when `times` is None; see above
 )
 
 # Fuses every scan position with one vectorised program.

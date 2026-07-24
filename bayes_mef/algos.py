@@ -11,7 +11,19 @@ from .utils import set_fluxes, set_threshold
 Vector = list[float]
 
 
-def _resolve(data, threshold, times, update_fluxes=False):
+FLUX_INIT = ("uncensored", "matched")
+
+
+def estimate_fluxes(data, threshold, flux_init="uncensored", background=None):
+    """Flux factors from the data, by either initialiser. See `set_fluxes`."""
+    if flux_init not in FLUX_INIT:
+        raise ValueError(f"flux_init must be one of {FLUX_INIT}, got {flux_init!r}")
+    if flux_init == "uncensored":
+        return set_fluxes(data, threshold)
+    return set_fluxes(data, threshold, background=background, common_mask=True)
+
+
+def _resolve(data, threshold, times, background, update_fluxes, flux_init):
     """Fill in the censoring threshold and flux factors from the data.
 
     Uses the same estimates as `LaunchMEF`, so a single stack does not have to
@@ -22,14 +34,16 @@ def _resolve(data, threshold, times, update_fluxes=False):
     if threshold is None:
         threshold = set_threshold(data)
     if times is None:
-        times = set_fluxes(data, threshold)
-        if not update_fluxes:
+        times = estimate_fluxes(data, threshold, flux_init, background)
+        if not update_fluxes and flux_init == "uncensored":
             warnings.warn(
-                "flux factors were estimated from the data. The estimate only "
-                "counts uncensored pixels, so it is compressed towards 1 "
-                "whenever censoring is substantial -- which is the case this "
-                "package exists for. Pass update_fluxes=True so EM refines "
-                "them, or pass `times` explicitly if you know the exposures.",
+                "flux factors were estimated from the data. The default "
+                "initialiser counts only uncensored pixels, so it is "
+                "compressed towards 1 whenever censoring is substantial -- "
+                "which is the case this package exists for. Pass "
+                "update_fluxes=True so EM refines them, flux_init='matched' "
+                "for a better estimate, or `times` explicitly if you know the "
+                "exposures.",
                 UserWarning,
                 stacklevel=3,
             )
@@ -52,8 +66,18 @@ class ConventionalMEF:
             as data or a scalar value. Defaults to 0.
     """
 
-    def __init__(self, data, threshold=None, times=None, background=None) -> None:
-        threshold, times = _resolve(data, threshold, times)
+    def __init__(
+        self,
+        data,
+        threshold=None,
+        times=None,
+        background=None,
+        *,
+        flux_init: str = "uncensored",
+    ) -> None:
+        threshold, times = _resolve(
+            data, threshold, times, background, False, flux_init
+        )
         self.data = as_array(data)
         self.threshold = as_array(threshold)
         self.times = as_array(times).reshape(-1)
@@ -99,8 +123,12 @@ class ExpectationMaximization(abc.ABC):
         background=None,
         update_fluxes: bool = False,
         max_flux_iteration: int = 100,
+        *,
+        flux_init: str = "uncensored",
     ) -> None:
-        threshold, times = _resolve(data, threshold, times, update_fluxes)
+        threshold, times = _resolve(
+            data, threshold, times, background, update_fluxes, flux_init
+        )
         self.data = as_array(data)
         self.threshold = as_array(threshold)
         self.times = as_array(times).reshape(-1)
@@ -241,10 +269,18 @@ class BayesianMEF(UncensoredEM):
         update_fluxes: bool = False,
         n_iter_fluxes: int = 100,
         n_init: int = 100,
+        *,
+        flux_init: str = "uncensored",
     ) -> None:
         self.n_init = n_init
         super().__init__(
-            data, threshold, times, background, update_fluxes, n_iter_fluxes
+            data,
+            threshold,
+            times,
+            background,
+            update_fluxes,
+            n_iter_fluxes,
+            flux_init=flux_init,
         )
         # Censoring is loop invariant, so resolve it once rather than every step.
         self._cens_idx, self._has_cens = em.censored_indices(self.data, self.threshold)
