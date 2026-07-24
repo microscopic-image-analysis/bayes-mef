@@ -5,8 +5,17 @@ import os
 
 import numpy as np
 
+import bayes_mef
+
+# JAX sees the host as one device unless told otherwise; expose one per core so
+# scan positions actually spread out. Must run before jax is imported.
+bayes_mef.set_cpu_devices(35)
+
 from bayes_mef.mef_launcher import LaunchMEF
-from scripts.synthetic_data_generation import save_ground_truth, simulate_ptychogram
+from scripts.synthetic_data_generation import (
+    save_ground_truth,
+    simulate_ptychogram,
+)
 
 
 def main(PATH, rho=0.5):
@@ -84,7 +93,6 @@ def main(PATH, rho=0.5):
 
 
 if __name__ == "__main__":
-
     # fuses data for every rho
     run_all_rhos = False
     PATH = "data/synthetic/"

@@ -6,7 +6,17 @@ import os
 import h5py
 import numpy as np
 
-from bayes_mef.mef_launcher import LaunchMEF, set_fluxes, set_threshold
+import bayes_mef
+
+# JAX sees the host as one device unless told otherwise; expose one per core so
+# scan positions actually spread out. Must run before jax is imported.
+bayes_mef.set_cpu_devices(35)
+
+from bayes_mef.mef_launcher import (
+    LaunchMEF,
+    set_fluxes,
+    set_threshold,
+)
 
 
 def load_data(filepath, pty_key="ptychogram"):
@@ -19,7 +29,7 @@ def load_data(filepath, pty_key="ptychogram"):
 def return_params(loadpath):
     params = {}
     with h5py.File(loadpath, "r") as hf:
-        for key in hf.keys():
+        for key in hf:
             params[key] = hf[key][()]
 
     return params
@@ -38,12 +48,12 @@ if __name__ == "__main__":
     for i in range(3):
         for j in range(3):
             # acquisitions
-            acq_filename = f"acq{i+1}_mea{j+1}.hdf5"
-            load_path = os.path.join(PATH, f"acq{i+1}/{acq_filename}")
+            acq_filename = f"acq{i + 1}_mea{j + 1}.hdf5"
+            load_path = os.path.join(PATH, f"acq{i + 1}/{acq_filename}")
 
             # background
-            bg_filename = f"bg_acq{i+1}_mea{j+1}.hdf5"
-            bg_path = os.path.join(PATH, f"bg_acq{i+1}/{bg_filename}")
+            bg_filename = f"bg_acq{i + 1}_mea{j + 1}.hdf5"
+            bg_path = os.path.join(PATH, f"bg_acq{i + 1}/{bg_filename}")
 
             pty.append(load_data(load_path))
             bg.append(load_data(bg_path))
