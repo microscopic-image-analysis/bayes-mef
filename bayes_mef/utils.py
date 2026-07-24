@@ -10,7 +10,7 @@ ComplexArr = npt.NDArray[np.complexfloating]
 
 def corr(a, b):
     """Cross-correlation coefficient."""
-    return np.corrcoef(a.flat, b.flat)[0, 1]
+    return np.corrcoef(np.asarray(a).ravel(), np.asarray(b).ravel())[0, 1]
 
 
 def complex_corr(truth: ComplexArr, recon_image: ComplexArr):
@@ -49,7 +49,7 @@ def timeit(method):
         start_time = time.time()
         result = method(*args, **kwargs)
         end_time = time.time()
-        print(f"{method.__name__} => {(end_time-start_time):.3f} sec")
+        print(f"{method.__name__} => {(end_time - start_time):.3f} sec")
 
         return result
 
@@ -104,6 +104,8 @@ def psd(image, bins, ft_switch=False):
 
 def crop_image(image, zoom_factor=1.5):
     """just a function to crop an object to focus on the object"""
+
+    image = np.asarray(image)
 
     # make sure new shape is smaller in every index
     img_shape = np.array(image.shape)
