@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked --python ${{ matrix.python-version }}
+      - name: Lint
+        run: |
+          uv run ruff check bayes_mef tests scripts benchmarks
+          uv run ruff format --check bayes_mef tests scripts benchmarks
+      - name: Test (float32, default)
+        run: uv run pytest -q
+      - name: Test (float64)
+        env:
+          JAX_ENABLE_X64: "1"
+        run: uv run pytest -q
+      - name: Test (multi-device CPU)
+        env:
+          JAX_ENABLE_X64: "1"
+          XLA_FLAGS: --xla_force_host_platform_device_count=4
+        run: uv run pytest -q tests/test_launcher.py
+
+  requirements-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: requirements.txt is generated from uv.lock
+        run: |
+          uv export --frozen --no-emit-project --no-hashes \
+            --no-default-groups --group scripts -o requirements.txt
+          git diff --exit-code requirements.txt
