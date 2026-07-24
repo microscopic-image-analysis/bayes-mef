@@ -1,118 +1,34 @@
-# Uses a parallel implementation for Bayesian MEF
+"""Vectorised MEF over ptychographic scan positions.
+
+Scan positions are fused with a single `vmap`ped, jitted EM program rather than
+one process per scan. On a multi-device host (see `bayes_mef.set_cpu_devices`)
+the scan axis is additionally spread across devices with `pmap`.
+"""
+
 import os
+import warnings
 from functools import partial
 
 import h5py
+import jax
+import jax.numpy as jnp
 import numpy as np
-from joblib import Parallel, delayed
-from tqdm import tqdm
 
-from bayes_mef.algos import BayesianMEF, ConventionalMEF, ExpectationMaximization, Prior
-from bayes_mef.utils import corr, timeit
+from . import em, kernels
+from ._compat import as_array, as_background, to_numpy, warn_if_precision_risk
+from .algos import CensoringPrior, Prior, PtychogramMean
+from .utils import corr, timeit
 
+# Vectorised equivalents of the Prior classes, so priors are derived per scan
+# inside the same jitted program as the EM itself.
+_PRIOR_KERNELS = {
+    CensoringPrior: kernels.censoring_prior,
+    PtychogramMean: kernels.ptychogram_mean_prior,
+}
 
-@timeit
-def parallel_fusion(
-    em_method: ExpectationMaximization,
-    pty_stack: np.ndarray,
-    background: np.ndarray,
-    threshold: float,
-    times: list[float],
-    n_iter: int,
-    cpus: int,
-    prior: Prior,
-    update_fluxes: bool,
-    max_flux_iterations: int,
-):
-    """running EM algorithm parallely by allocating CPU cores"""
-
-    # assumes the dimensions to be in the order of (scans, exposure, M, M)
-    assert pty_stack.ndim == 4
-
-    # run em partial by proving other params
-    run_em_partial = partial(
-        run_em,
-        em_method=em_method,
-        threshold=threshold,
-        times=times,
-        n_iter=n_iter,
-        prior=prior,
-        update_fluxes=update_fluxes,
-        max_flux_iterations=max_flux_iterations,
-    )
-
-    print(f"\n Starting {em_method.__name__} ..")
-
-    # stack as list of tuples of exposures of a scan with background
-    pty_stack = [pattern for pattern in pty_stack]
-
-    # assumes the same dimension as data `pty_stack` (scans, exposure, M, M)
-    if background.ndim == 4:
-
-        # creates a bg stack
-        bg_stack = [bg_per_scan for bg_per_scan in background]
-
-        with Parallel(n_jobs=cpus) as parallel:
-            fused = parallel(
-                delayed(run_em_partial)(patterns_per_scan, bg_per_scan)
-                for patterns_per_scan, bg_per_scan in tqdm(
-                    zip(pty_stack, bg_stack), total=len(pty_stack)
-                )
-            )
-
-    # assumes dimension to be (exposures, M, M)
-    if background.ndim == 3:
-        # creates another partial function that loads same background for every scan
-        run_em_partial_same_bg = partial(run_em_partial, bg=background)
-
-        with Parallel(n_jobs=cpus) as parallel:
-            fused = parallel(
-                delayed(run_em_partial_same_bg)(pattern) for pattern in tqdm(pty_stack)
-            )
-
-    # unpack fused images and updated fluxes
-    fused_em, times_em = zip(
-        *[(fused_per_scan[0], fused_per_scan[1]) for fused_per_scan in fused]
-    )
-
-    return np.array(fused_em), np.array(times_em)
-
-
-def run_em(
-    stack,
-    bg,
-    em_method,
-    threshold,
-    times,
-    n_iter,
-    prior,
-    update_fluxes,
-    max_flux_iterations,
-):
-    """runs EM on exposures for a given scan"""
-
-    assert stack.ndim == 3
-    assert bg.ndim == 3
-
-    # EM launcher
-    em = em_method(stack, threshold, times, bg, update_fluxes, max_flux_iterations)
-
-    # if prior exists, extract the values of alpha and beta
-    # or fall back to default values.
-    if prior is not None:
-        assert issubclass(prior, Prior)
-        em_prior = prior(stack, threshold)
-        em_prior()
-
-        # set the prior values
-        em.alpha = em_prior.alpha
-        em.beta = em_prior.beta
-
-    em.run(n_iter)
-    fused_em = em.fused_image.copy()
-    times_em = em.times.copy()
-
-    return fused_em, times_em
+# Live buffers per scan inside the EM step: data, cens, nu, rates, rates+bg, fused.
+_LIVE_BUFFERS = 6
+_TARGET_CHUNK_BYTES = 512e6
 
 
 def set_fluxes(stack, threshold, use_uncensored=True):
@@ -121,15 +37,9 @@ def set_fluxes(stack, threshold, use_uncensored=True):
     especially useful with experimental data due to its variations.
     """
     # stack should have (n_exposures, n_scans, X, Y) or (n_exposures, X, Y)
+    stack = np.asarray(stack)
+    pty = stack * (stack < threshold) if use_uncensored else stack
 
-    if use_uncensored:
-        uncens_mask = stack < threshold
-        uncens_stack = stack * uncens_mask
-        pty = uncens_stack.copy()
-    else:
-        pty = stack.copy()
-
-    # estimate fluxes
     ind = len(pty) // 2 - 1
     axis_last = tuple(range(1, pty.ndim))
     fluxes = (np.sum(pty, axis=axis_last) + 1e-5) / (np.sum(pty[ind]) + 1e-5)
@@ -139,9 +49,93 @@ def set_fluxes(stack, threshold, use_uncensored=True):
 
 def set_threshold(stack):
     """sets threshold based on the exposures per scan"""
-
     # stack is (n_exposures, X, Y)
+    stack = np.asarray(stack)
     return stack.max() - np.sqrt(stack.max())
+
+
+def _default_batch_size(n_scans, per_scan_shape, itemsize):
+    per_scan = int(np.prod(per_scan_shape)) * itemsize * _LIVE_BUFFERS
+    return int(np.clip(_TARGET_CHUNK_BYTES // max(per_scan, 1), 1, n_scans))
+
+
+def _pad_axis0(x, multiple):
+    """Pad the scan axis so it divides evenly across devices; sliced off after."""
+    remainder = -x.shape[0] % multiple
+    if remainder == 0:
+        return x
+    pad = [(0, remainder)] + [(0, 0)] * (x.ndim - 1)
+    return jnp.pad(x, pad, mode="edge")
+
+
+def _map_over_scans(per_scan, mapped, shared, n_scans, batch_size, n_devices):
+    """Run `per_scan` over every scan position, chunked and spread over devices.
+
+    `mapped` are arrays batched along the scan axis; `shared` are broadcast to
+    every scan. Within a chunk, `vmap` vectorises the scans and -- when more
+    than one device is visible -- `pmap` spreads them across devices. `pmap` is
+    used rather than explicit shardings because the EM's nested `lax.scan`
+    defeats XLA's sharding propagation.
+    """
+    in_axes = (0,) * len(mapped) + (None,) * len(shared)
+    vectorised = jax.vmap(per_scan, in_axes=in_axes)
+
+    if n_devices > 1:
+        runner = jax.pmap(vectorised, in_axes=in_axes)
+    else:
+        runner = jax.jit(vectorised)
+
+    outputs = []
+    for start in range(0, n_scans, batch_size):
+        chunk = [a[start : start + batch_size] for a in mapped]
+        size = chunk[0].shape[0]
+
+        if n_devices > 1:
+            # (n_devices, per_device, ...) so pmap maps devices and vmap scans.
+            chunk = [_pad_axis0(a, n_devices) for a in chunk]
+            chunk = [a.reshape(n_devices, -1, *a.shape[1:]) for a in chunk]
+
+        out = runner(*chunk, *shared)
+        if n_devices > 1:
+            out = jax.tree.map(lambda a: a.reshape(-1, *a.shape[2:]), out)
+        outputs.append(jax.tree.map(lambda a, n=size: to_numpy(a)[:n], out))
+
+    return jax.tree.map(lambda *xs: np.concatenate(xs, axis=0), *outputs)
+
+
+def _fuse_one(
+    data,
+    alpha,
+    beta,
+    cens_idx,
+    has_cens,
+    background,
+    *,
+    threshold,
+    times,
+    n_iter,
+    n_init,
+    update_fluxes,
+    max_flux,
+):
+    """Full EM for a single scan position; vmapped over the scan axis."""
+    state = em.init_bayesian_impl(data, threshold, times, background, n_init=n_init)
+    state, _ = em.advance_bayesian_impl(
+        state,
+        data,
+        cens_idx,
+        has_cens,
+        threshold,
+        background,
+        alpha,
+        beta,
+        jnp.ones_like(times),
+        1.0 / times,
+        max_flux,
+        n_iter=n_iter,
+        update_fluxes=update_fluxes,
+    )
+    return state.fused, state.times
 
 
 class LaunchMEF:
@@ -149,132 +143,217 @@ class LaunchMEF:
 
     def __init__(
         self,
-        pty_stack: np.ndarray,
-        background: np.ndarray,
-        times: list[float] = None,
-        threshold: float = None,
-        prior: Prior = None,
-        pty_noisefree_stack: np.ndarray = None,
+        pty_stack,
+        background,
+        times=None,
+        threshold=None,
+        prior: type[Prior] | None = None,
+        pty_noisefree_stack=None,
         update_fluxes: bool = False,
     ) -> None:
+        pty_stack = np.asarray(pty_stack)
+        assert pty_stack.ndim == 4, "expected (n_exposures, n_scans, X, Y)"
 
-        # initialize params
-        self.pty_stack = pty_stack  # (n_exposures, n_scans, X, Y)
-        self.background = background
-        self.threshold = (
-            set_threshold(self.pty_stack) if threshold is None else threshold
-        )
-        self.times = (
-            set_fluxes(self.pty_stack, self.threshold) if times is None else times
-        )
+        self.threshold = set_threshold(pty_stack) if threshold is None else threshold
+        self.times = set_fluxes(pty_stack, self.threshold) if times is None else times
         self.prior = prior
         self.pty_noisefree_stack = pty_noisefree_stack
         self.update_fluxes = update_fluxes
 
-        # (n_exposures, n_scans, X, Y)
-        assert self.pty_stack.ndim == 4
+        # move the scan axis first: (n_scans, n_exposures, X, Y)
+        self.pty_stack = np.moveaxis(pty_stack, 1, 0)
 
-        # move second dimension to first (n_scans, n_exposures, X, Y)
-        self.pty_stack = np.moveaxis(self.pty_stack, 1, 0)
+        background = np.zeros(1) if background is None else np.asarray(background)
+        self.background = (
+            np.moveaxis(background, 1, 0) if background.ndim == 4 else background
+        )
 
-        if self.background.ndim == 4:
-            self.background = np.moveaxis(self.background, 1, 0)
+    def _prepare(self, ncpus, batch_size):
+        data = as_array(self.pty_stack)
+        background = as_background(self.background)
+        threshold = as_array(self.threshold)
+        times = as_array(self.times).reshape(-1)
 
+        warn_if_precision_risk(threshold)
+
+        n_devices = self._device_count(ncpus)
+        n_scans = data.shape[0]
+        if batch_size is None:
+            batch_size = _default_batch_size(
+                n_scans, data.shape[1:], data.dtype.itemsize
+            )
+        # keep chunks a whole multiple of the device count where possible
+        batch_size = max(n_devices, batch_size - batch_size % n_devices or batch_size)
+
+        return data, background, threshold, times, n_scans, batch_size, n_devices
+
+    @staticmethod
+    def _device_count(ncpus):
+        available = jax.device_count()
+        if ncpus is None:
+            return available
+        if ncpus > available:
+            warnings.warn(
+                f"requested {ncpus} devices but JAX sees {available}. Call "
+                "bayes_mef.set_cpu_devices() before importing jax, or set "
+                f"XLA_FLAGS=--xla_force_host_platform_device_count={ncpus}, to "
+                "spread scan positions across CPU cores.",
+                UserWarning,
+                stacklevel=3,
+            )
+        return min(ncpus, available)
+
+    def _priors(self, data, threshold, n_scans):
+        """Per-scan gamma prior parameters, batched along the scan axis."""
+        if self.prior is None:
+            return (
+                jnp.full((n_scans,), em.INIT_ALPHA, data.dtype),
+                jnp.full((n_scans,), em.INIT_BETA, data.dtype),
+            )
+
+        assert issubclass(self.prior, Prior)
+        kernel = _PRIOR_KERNELS.get(self.prior)
+        if kernel is not None:
+            alpha, beta = jax.vmap(kernel, in_axes=(0, None))(data, threshold)
+        else:
+            # Unknown user subclass: derive it on the host, one scan at a time.
+            pairs = []
+            for scan in np.asarray(data):
+                p = self.prior(scan, float(threshold))
+                p()
+                pairs.append((p.alpha, p.beta))
+            alpha = jnp.stack(
+                [jnp.broadcast_to(as_array(a), scan.shape[1:]) for a, _ in pairs]
+            )
+            beta = jnp.stack(
+                [jnp.broadcast_to(as_array(b), scan.shape[1:]) for _, b in pairs]
+            )
+        return alpha, beta
+
+    @timeit
     def run_mle(self):
         """runs MLE"""
+        data = as_array(self.pty_stack)
+        background = as_background(self.background)
+        threshold = as_array(self.threshold)
+        times = as_array(self.times).reshape(-1)
 
-        if self.background.ndim == 3:
-            pty_mle = []
-            for patterns in self.pty_stack:
-                # Conventional MEF (MLE)
-                conv_mle = ConventionalMEF(
-                    patterns, self.threshold, self.times, self.background
-                )
-                conv_mle.mle()
-                pty_mle.append(conv_mle.fused_image)
+        def per_scan(scan, bg):
+            return kernels.mle_fuse(scan, kernels.label_f(scan, threshold), times, bg)
 
-        if self.background.ndim == 4:
-            pty_mle = []
-            for patterns, bg in zip(self.pty_stack, self.background):
-                # Conventional MEF (MLE)
-                conv_mle = ConventionalMEF(patterns, self.threshold, self.times, bg)
-                conv_mle.mle()
-                pty_mle.append(conv_mle.fused_image)
+        if background.ndim == data.ndim:
+            mapped, shared = (data, background), ()
+        else:
+            mapped, shared = (data,), (background,)
+
+        pty_mle = _map_over_scans(
+            per_scan, mapped, shared, data.shape[0], data.shape[0], 1
+        )
 
         if self.pty_noisefree_stack is not None:
-            # compare with some ground truth (if exists)
             mle_corr = corr(pty_mle[0], self.pty_noisefree_stack[0])
             print(f"Correlation of MLE with noisefree: {mle_corr:.3f}")
 
-        # min and max for the fused data
-        print(f"Min MLE: {np.min(pty_mle):.2f}," f" Max MLE: {np.max(pty_mle):.2f}")
+        print(f"Min MLE: {np.min(pty_mle):.2f}, Max MLE: {np.max(pty_mle):.2f}")
+        return pty_mle
 
-        return np.array(pty_mle)
+    @timeit
+    def run_em(self, n_iter=200, ncpus=None, *, batch_size=None, n_init=100):
+        """Runs EM over all scan positions.
 
-    def run_em(self, n_iter=200, ncpus=6):
-        """Runs EM in parallel"""
+        Args:
+            n_iter: EM iterations per scan position.
+            ncpus: number of devices to spread scan positions over. Requires
+                `bayes_mef.set_cpu_devices()` or `XLA_FLAGS` to expose more than
+                one CPU device; it no longer spawns processes.
+            batch_size: scan positions fused at once. Defaults to a size that
+                keeps roughly 512 MB of intermediates live.
+        """
+        data, background, threshold, times, n_scans, batch_size, n_devices = (
+            self._prepare(ncpus, batch_size)
+        )
+        alpha, beta = self._priors(data, threshold, n_scans)
 
-        # run in parallel
-        pty_em, em_fluxes = parallel_fusion(
-            BayesianMEF,
-            self.pty_stack,
-            self.background,
-            self.threshold,
-            self.times,
-            n_iter=n_iter,
-            cpus=ncpus,
-            prior=self.prior,
-            update_fluxes=self.update_fluxes,
-            max_flux_iterations=n_iter,
+        # A per-scan (4-D) background is mapped; a shared (3-D) one is broadcast.
+        cens_idx, has_cens = em.censored_indices(data, threshold)
+        cens_idx, has_cens = jnp.asarray(cens_idx), jnp.asarray(has_cens)
+
+        mapped = (data, alpha, beta, cens_idx, has_cens)
+        if background.ndim == data.ndim:
+            mapped, shared = (*mapped, background), ()
+        else:
+            shared = (background,)
+
+        pty_em, em_fluxes = self._fuse(
+            mapped,
+            shared,
+            threshold,
+            times,
+            n_iter,
+            n_init,
+            self.update_fluxes,
+            n_scans,
+            batch_size,
+            n_devices,
         )
 
-        # running EM again in parallel without updating fluxes and instead using a fixed
-        # average of the corrected fluxes
+        # Re-run with a fixed average of the corrected fluxes.
         if self.update_fluxes:
-            corrected_mean_fluxes = list(np.mean(em_fluxes, axis=0))
-            print("Corrected fluxes: ", corrected_mean_fluxes)
-
-            pty_em, _ = parallel_fusion(
-                BayesianMEF,
-                self.pty_stack,
-                self.background,
-                self.threshold,
-                corrected_mean_fluxes,
-                n_iter=n_iter,
-                cpus=ncpus,
-                prior=self.prior,
-                update_fluxes=False,
-                max_flux_iterations=n_iter,
+            corrected = np.mean(em_fluxes, axis=0)
+            print("Corrected fluxes: ", list(corrected))
+            pty_em, _ = self._fuse(
+                mapped,
+                shared,
+                threshold,
+                as_array(corrected),
+                n_iter,
+                n_init,
+                False,
+                n_scans,
+                batch_size,
+                n_devices,
             )
 
         if self.pty_noisefree_stack is not None:
-            # compare with some ground truth (if exists)
             em_corr = corr(pty_em[0], self.pty_noisefree_stack[0])
             print(f"Correlation of EM with noisefree: {em_corr:.3f}")
 
-        # min and max for the fused data
-        print(f"Min EM: {pty_em.min():.2f}," f" Max EM: {pty_em.max():.2f}")
-
+        print(f"Min EM: {pty_em.min():.2f}, Max EM: {pty_em.max():.2f}")
         return pty_em, em_fluxes
 
-    def save_result(
+    def _fuse(
         self,
-        filepath: str,
-        pty_fused: np.ndarray,
-        fluxes_em: np.ndarray,
-        params: dict,
-        pty_key: str,
-        save_misc: bool,
+        mapped,
+        shared,
+        threshold,
+        times,
+        n_iter,
+        n_init,
+        update_fluxes,
+        n_scans,
+        batch_size,
+        n_devices,
     ):
-        """saves result as hdf5"""
+        per_scan = partial(
+            _fuse_one,
+            threshold=threshold,
+            times=times,
+            n_iter=n_iter,
+            n_init=n_init,
+            update_fluxes=update_fluxes,
+            max_flux=as_array(n_iter),
+        )
+        return _map_over_scans(per_scan, mapped, shared, n_scans, batch_size, n_devices)
 
+    def save_result(self, filepath, pty_fused, fluxes_em, params, pty_key, save_misc):
+        """saves result as hdf5"""
         if "orientation" not in params:
             params.update({"orientation": 0})
 
         with h5py.File(filepath, "w") as hf:
-            hf.create_dataset(pty_key, data=pty_fused, dtype="f")
-            hf.create_dataset("exposures", data=self.times, dtype="f")
-            hf.create_dataset("fluxes", data=fluxes_em)
+            hf.create_dataset(pty_key, data=np.asarray(pty_fused), dtype="f")
+            hf.create_dataset("exposures", data=np.asarray(self.times), dtype="f")
+            hf.create_dataset("fluxes", data=np.asarray(fluxes_em))
 
             if save_misc:
                 hf.create_dataset("ptychogram_noisy", data=self.pty_stack, dtype="f")
@@ -290,7 +369,6 @@ class LaunchMEF:
             hf.create_dataset("binningFactor", data=params["binningFactor"], dtype="i")
             hf.create_dataset("dxd", data=(params["dxd"],), dtype="f")
             hf.create_dataset("Nd", data=(params["Nd"],), dtype="i")
-            # hf.create_dataset("No", data=(params["No"],), dtype="i")
             hf.create_dataset("zo", data=(params["zo"],), dtype="f")
             hf.create_dataset("wavelength", data=(params["wavelength"],), dtype="f")
             hf.create_dataset(
@@ -298,7 +376,6 @@ class LaunchMEF:
                 data=(params["entrancePupilDiameter"],),
                 dtype="f",
             )
-
             hf.create_dataset("orientation", data=params["orientation"])
 
         print(f"Saved fused result at {filepath}")
@@ -312,12 +389,10 @@ class LaunchMEF:
         mle_switch: bool = True,
         em_switch: bool = True,
         n_iter_em: int = 200,
-        ncpus_em: int = 6,
+        ncpus_em: int | None = None,
         save_misc: bool = False,
         separate_fused_dir: bool = False,
     ):
-
-        # runs and saves MLE result
         if mle_switch:
             if separate_fused_dir:
                 filepath_mle = f"{savepath}/mle_fused/mle_{filename}.hdf5"
@@ -327,19 +402,12 @@ class LaunchMEF:
 
             if not os.path.exists(filepath_mle):
                 pty_mle = self.run_mle()
-                mle_fluxes = self.times
                 self.save_result(
-                    filepath_mle,
-                    pty_mle,
-                    mle_fluxes,
-                    params,
-                    pty_key,
-                    save_misc,
+                    filepath_mle, pty_mle, self.times, params, pty_key, save_misc
                 )
             else:
                 print(f"File {filepath_mle} already exists")
 
-        # runs and saves EM result
         if em_switch:
             if separate_fused_dir:
                 filepath_em = f"{savepath}/em_fused/em_{filename}.hdf5"
@@ -350,12 +418,7 @@ class LaunchMEF:
             if not os.path.exists(filepath_em):
                 pty_em, fluxes_em = self.run_em(n_iter_em, ncpus_em)
                 self.save_result(
-                    filepath_em,
-                    pty_em,
-                    fluxes_em,
-                    params,
-                    pty_key,
-                    save_misc,
+                    filepath_em, pty_em, fluxes_em, params, pty_key, save_misc
                 )
             else:
                 print(f"File {filepath_em} already exists")
