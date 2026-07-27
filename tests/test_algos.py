@@ -132,7 +132,8 @@ def test_threshold_and_times_are_estimated_when_omitted(scenario, assert_close):
 
     data, background = scenario["data"], scenario["background"]
     threshold = set_threshold(data)
-    times = set_fluxes(data, threshold)
+    # the default initialiser is "matched", so the explicit estimate must match it
+    times = set_fluxes(data, threshold, background=background, common_mask=True)
 
     auto = BayesianMEF(data, background=background, update_fluxes=True)
     auto.run(10)
@@ -146,11 +147,12 @@ def test_threshold_and_times_are_estimated_when_omitted(scenario, assert_close):
 
 
 def test_conventional_mef_estimates_too(scenario, assert_close):
+    """Omitting times uses the default 'matched' initialiser under the hood."""
     from bayes_mef.utils import set_fluxes, set_threshold
 
     data, background = scenario["data"], scenario["background"]
     threshold = set_threshold(data)
-    times = set_fluxes(data, threshold)
+    times = set_fluxes(data, threshold, background=background, common_mask=True)
 
     auto = ConventionalMEF(data, background=background)
     auto.mle()
@@ -160,15 +162,17 @@ def test_conventional_mef_estimates_too(scenario, assert_close):
 
 
 def test_estimated_fluxes_warn_unless_refined(scenario):
-    """The estimate is compressed by censoring, so it needs update_fluxes."""
+    """Refinement is on by default; only disabling it on an estimate warns."""
     data, background = scenario["data"], scenario["background"]
 
+    # Explicitly turning refinement off on an estimated flux warns.
     with pytest.warns(UserWarning, match="flux factors were estimated"):
-        BayesianMEF(data, background=background)
+        BayesianMEF(data, background=background, update_fluxes=False)
 
+    # The default refines the estimate, so construction is silent.
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
-        BayesianMEF(data, background=background, update_fluxes=True)
+        BayesianMEF(data, background=background)
 
 
 def test_estimated_fluxes_plus_refinement_recover_the_truth():
@@ -190,9 +194,11 @@ def test_estimated_fluxes_plus_refinement_recover_the_truth():
     assert corr(refined.fused_image) > 0.95
 
     with pytest.warns(UserWarning):
-        raw = BayesianMEF(data, background=background)
+        raw = BayesianMEF(
+            data, background=background, flux_init="uncensored", update_fluxes=False
+        )
     raw.run(200)
-    assert corr(raw.fused_image) < 0.5  # documents why the warning exists
+    assert corr(raw.fused_image) < 0.5  # documents why refinement is on by default
 
 
 def test_default_flux_estimator_is_unchanged():
@@ -261,7 +267,9 @@ def test_matched_initialiser_needs_no_refinement_when_scattering_is_strong():
     def corr(f):
         return float(np.corrcoef(np.asarray(f).ravel(), truth.ravel())[0, 1])
 
-    em = BayesianMEF(data, background=background, flux_init="matched")
+    em = BayesianMEF(
+        data, background=background, flux_init="matched", update_fluxes=False
+    )
     em.run(50)
     assert corr(em.fused_image) > 0.98
 
@@ -271,7 +279,10 @@ def test_estimated_fluxes_warn_for_either_initialiser(scenario):
     for init in ("uncensored", "matched"):
         with pytest.warns(UserWarning):
             BayesianMEF(
-                scenario["data"], background=scenario["background"], flux_init=init
+                scenario["data"],
+                background=scenario["background"],
+                flux_init=init,
+                update_fluxes=False,
             )
 
 
@@ -317,7 +328,9 @@ def test_weakly_scattering_data_defeats_every_flux_estimator():
     # Neither initialiser resolves the exposures: both come out nearly flat.
     for init in ("uncensored", "matched"):
         with pytest.warns(UserWarning):
-            em = BayesianMEF(data, background=background, flux_init=init)
+            em = BayesianMEF(
+                data, background=background, flux_init=init, update_fluxes=False
+            )
         assert np.max(ratios(em)) < 2.0, f"{init} unexpectedly resolved the exposures"
 
     # Refinement recovers most of the range; the true span is 64x.

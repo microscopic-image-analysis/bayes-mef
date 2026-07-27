@@ -16,11 +16,10 @@ constructor signatures, `run()` semantics and `.fused_image` attribute.
   threshold exceeds 4096, above which float32 loses accuracy for rates near the
   threshold (~10% at a 16-bit threshold).
 - **`LaunchMEF` no longer uses `joblib`.** Scan positions are fused by one
-  vectorised program (`vmap`, plus `pmap` across devices). `run_em`'s `ncpus`
-  argument now selects how many devices to spread the scan axis over instead of
-  spawning processes; it requires `bayes_mef.set_cpu_devices(n)` or
-  `XLA_FLAGS=--xla_force_host_platform_device_count=n` before JAX is imported.
-  A new `batch_size` keyword caps how many scan positions are fused at once.
+  vectorised, jitted program (`vmap`) that runs unchanged on CPU or GPU, chunked
+  so device memory stays bounded regardless of stack size. `run_em`'s `ncpus`
+  argument is now ignored (kept, and warns, so existing call sites keep working);
+  a new `batch_size` keyword caps how many scan positions are fused at once.
 - **Python 3.11+** (nominally 3.9 before, though `algos.py` already required
   3.10), and the `<3.13` cap is gone.
 - Packaging is PEP 621 with hatchling; `uv.lock` replaces `poetry.lock`, and
@@ -28,10 +27,11 @@ constructor signatures, `run()` semantics and `.fused_image` attribute.
 
 - **`threshold` and `times` are optional on `BayesianMEF`, `UncensoredEM` and
   `ConventionalMEF`**, estimated from the data with the same helpers `LaunchMEF`
-  uses. Because that estimate only counts uncensored pixels it is compressed
-  towards 1 when censoring is heavy, so a warning asks for `update_fluxes=True`,
-  which refines it: on the README simulation, estimated flux factors alone
-  correlate 0.16 with the truth against 0.989 once refined.
+  uses. Because a naive estimate only counts uncensored pixels it is compressed
+  towards 1 when censoring is heavy, so when `times` is omitted the estimate is
+  now initialised from the non-saturated pixels and refined in EM by default
+  (see below): on the README simulation, the older estimate alone correlates 0.16
+  with the truth against 0.989 once refined.
 - **A second flux initialiser**, selected with `flux_init` on the classes and
   `LaunchMEF`, or with `background=` and `common_mask=True` on `set_fluxes`
   directly. `"matched"` subtracts the background and uses only pixels uncensored
@@ -47,11 +47,18 @@ constructor signatures, `run()` semantics and `.fused_image` attribute.
   default returns 1.02:1.00:1.01:0.96 and `"matched"` 1.05:1.00:1.09:1.26. What
   recovers the range there is EM's iterative treatment of the background, via
   `update_fluxes=True` (to 0.76:1.00:1.23:15.55), which is the regime the paper
-  is about. Estimating flux factors therefore warns unless refinement is
-  enabled, and warns regardless when the estimate comes out nearly flat.
+  is about.
 
-  The default remains `"uncensored"`, bit-identical to v0.1.9, since published
-  results depend on it.
+  When `times` is omitted, `BayesianMEF`, `ConventionalMEF` and `LaunchMEF` now
+  default to `flux_init="matched"` with refinement enabled (`update_fluxes`
+  defaults to on precisely when `times` is estimated) — the combination that
+  tracks the true exposures most reliably under censoring, so the common case
+  needs no flags. Pass `update_fluxes=False` or `flux_init="uncensored"` to opt
+  out; supplied `times` are still trusted and left unrefined unless
+  `update_fluxes=True`. The `set_fluxes` helper's own default stays
+  `"uncensored"`, bit-identical to v0.1.9, for direct callers whose published
+  results depend on it. A warning is raised when refinement is disabled on an
+  estimate, and regardless when the estimate comes out nearly flat.
 - `set_fluxes` and `set_threshold` moved to `bayes_mef.utils` so the single
   image classes can use them. They are still importable from
   `bayes_mef.mef_launcher` and from the top level.
@@ -72,6 +79,13 @@ constructor signatures, `run()` semantics and `.fused_image` attribute.
 - The `n_init` warm start ran twice during `BayesianMEF` construction. The result
   was identical, so this is purely a 2x saving in construction cost.
 - `utils.corr` and `utils.crop_image` accept JAX arrays.
+
+### Docs
+
+- `benchmarks/FINDINGS.md` (reproduced by `mef_regime_study.py`, plotted by
+  `plot_findings.py`) studies where `BayesianMEF` beats `ConventionalMEF`, how far
+  to overexpose, and how to estimate unknown flux factors — the study behind the
+  `flux_init="matched"` + refinement defaults above.
 
 ### Notes on numerical fidelity
 

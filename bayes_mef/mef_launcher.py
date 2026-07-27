@@ -169,8 +169,8 @@ class LaunchMEF:
         threshold=None,
         prior: type[Prior] | None = None,
         pty_noisefree_stack=None,
-        update_fluxes: bool = False,
-        flux_init: str = "uncensored",
+        update_fluxes: bool | None = None,
+        flux_init: str = "matched",
     ) -> None:
         pty_stack = np.asarray(pty_stack)
         assert pty_stack.ndim == 4, "expected (n_exposures, n_scans, X, Y)"
@@ -178,7 +178,9 @@ class LaunchMEF:
         self.threshold = set_threshold(pty_stack) if threshold is None else threshold
         self.prior = prior
         self.pty_noisefree_stack = pty_noisefree_stack
-        self.update_fluxes = update_fluxes
+        # Refine the fluxes by default whenever they are estimated (times omitted);
+        # trust supplied exposures. Either is overridable.
+        self.update_fluxes = (times is None) if update_fluxes is None else update_fluxes
 
         background = np.zeros(1) if background is None else np.asarray(background)
 

@@ -14,7 +14,7 @@ Vector = list[float]
 FLUX_INIT = ("uncensored", "matched")
 
 
-def estimate_fluxes(data, threshold, flux_init="uncensored", background=None):
+def estimate_fluxes(data, threshold, flux_init="matched", background=None):
     """Flux factors from the data, by either initialiser. See `set_fluxes`."""
     if flux_init not in FLUX_INIT:
         raise ValueError(f"flux_init must be one of {FLUX_INIT}, got {flux_init!r}")
@@ -86,6 +86,8 @@ class ConventionalMEF:
             from the data when omitted, relative to one exposure.
         background (np.ndarray or scalar, optional): background with same shape
             as data or a scalar value. Defaults to 0.
+        flux_init (str, optional): initialiser used when `times` is omitted.
+            Defaults to "matched" (the best estimate from non-saturated pixels).
     """
 
     def __init__(
@@ -95,7 +97,7 @@ class ConventionalMEF:
         times=None,
         background=None,
         *,
-        flux_init: str = "uncensored",
+        flux_init: str = "matched",
     ) -> None:
         threshold, times = _resolve(
             data, threshold, times, background, False, flux_init
@@ -133,6 +135,8 @@ class ExpectationMaximization(abc.ABC):
         background (np.ndarray or scalar, optional): background with same shape
             as data or a scalar value. Defaults to 0.
         update_fluxes (bool, optional): re-estimate the flux factors each iteration.
+            Defaults to refining whenever `times` was estimated (i.e. omitted),
+            and to leaving supplied `times` untouched. Pass True/False to override.
         max_flux_iteration (int, optional): stop refreshing fluxes after this many
             iterations.
     """
@@ -143,11 +147,15 @@ class ExpectationMaximization(abc.ABC):
         threshold=None,
         times=None,
         background=None,
-        update_fluxes: bool = False,
+        update_fluxes: bool | None = None,
         max_flux_iteration: int = 100,
         *,
-        flux_init: str = "uncensored",
+        flux_init: str = "matched",
     ) -> None:
+        # When the exposures are estimated from the data, refine them by default;
+        # when they are supplied, trust them. Either is overridable.
+        if update_fluxes is None:
+            update_fluxes = times is None
         threshold, times = _resolve(
             data, threshold, times, background, update_fluxes, flux_init
         )
@@ -278,6 +286,8 @@ class BayesianMEF(UncensoredEM):
         background (np.ndarray or scalar, optional): background with same shape
             as data or a scalar value. Defaults to 0.
         update_fluxes (bool, optional): re-estimate the flux factors each iteration.
+            Defaults to refining whenever `times` was estimated (i.e. omitted),
+            and to leaving supplied `times` untouched. Pass True/False to override.
         n_iter_fluxes (int, optional): stop refreshing fluxes after this many iterations.
         n_init (int, optional): uncensored iterations used to initialise the rate.
     """
@@ -288,11 +298,11 @@ class BayesianMEF(UncensoredEM):
         threshold=None,
         times=None,
         background=None,
-        update_fluxes: bool = False,
+        update_fluxes: bool | None = None,
         n_iter_fluxes: int = 100,
         n_init: int = 100,
         *,
-        flux_init: str = "uncensored",
+        flux_init: str = "matched",
     ) -> None:
         self.n_init = n_init
         super().__init__(
