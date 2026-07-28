@@ -61,14 +61,14 @@ bayes_mef.enable_x64()  # or set JAX_ENABLE_X64=1
 
 ### When the exposures are not known
 
-Omit `times` (and `threshold`) and they are estimated from the data. Estimated exposures are initialised from the non-saturated pixels (`flux_init="matched"`) and refined inside EM (`update_fluxes=True`) **by default**:
+Omit `times` (and `threshold`) and they are estimated from the data, initialised from the non-saturated pixels (`flux_init="matched"`). The estimate is only a starting point, so **pass `update_fluxes=True` with it** and let EM refine it:
 
 ```python
-mef_em = BayesianMEF(data_saturated, background=background)
+mef_em = BayesianMEF(data_saturated, background=background, update_fluxes=True)
 mef_em.run(n_iter=200)
 ```
 
-Pass `update_fluxes=False` or `flux_init="uncensored"` (the v0.1.9 initialiser, whose ratios compress under heavy censoring) to opt out. Supplied `times` are trusted and left unrefined unless `update_fluxes=True`.
+`update_fluxes` defaults to False — `times` are used exactly as given, estimated or not — and estimating them without it warns. On the simulation above, the unrefined estimate correlates 0.16 with the truth against 0.989 once refined. `flux_init="uncensored"` selects the v0.1.9 initialiser, whose ratios compress under heavy censoring.
 
 Once the background dominates the signal — the weak, low-SNR regime the [paper](https://doi.org/10.1364/OE.524284) targets — summed counts carry almost no information about the exposures, and it is EM's iterative background handling, not the initialiser, that recovers the range; a warning is raised when the estimate comes out nearly flat. Estimated fluxes are relative, so the fused image is on a relative scale. **Supply the real exposure times whenever you know them.**
 
@@ -82,9 +82,9 @@ from bayes_mef import LaunchMEF
 launch_mef = LaunchMEF(
     ptychogram_stack,    # (n_exposures, n_scans, dp_x, dp_y)
     background,          # a number, one dark frame, or one per exposure
-    times=None,          # None -> estimated from the data (then refined)
+    times=None,          # None -> estimated from the data
     threshold=None,      # None -> estimated automatically
-    update_fluxes=None,  # None -> refine when `times` is estimated
+    update_fluxes=False, # True -> EM refines the fluxes; pair with estimated times
     flux_init="matched",
 )
 

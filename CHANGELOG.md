@@ -50,15 +50,19 @@ constructor signatures, `run()` semantics and `.fused_image` attribute.
   is about.
 
   When `times` is omitted, `BayesianMEF`, `ConventionalMEF` and `LaunchMEF` now
-  default to `flux_init="matched"` with refinement enabled (`update_fluxes`
-  defaults to on precisely when `times` is estimated) — the combination that
-  tracks the true exposures most reliably under censoring, so the common case
-  needs no flags. Pass `update_fluxes=False` or `flux_init="uncensored"` to opt
-  out; supplied `times` are still trusted and left unrefined unless
-  `update_fluxes=True`. The `set_fluxes` helper's own default stays
-  `"uncensored"`, bit-identical to v0.1.9, for direct callers whose published
-  results depend on it. A warning is raised when refinement is disabled on an
-  estimate, and regardless when the estimate comes out nearly flat.
+  estimate it with `flux_init="matched"`, which tracks the true exposures most
+  reliably under censoring. `flux_init="uncensored"` selects the v0.1.9
+  initialiser. The `set_fluxes` helper's own default stays `"uncensored"`,
+  bit-identical to v0.1.9, for direct callers whose published results depend
+  on it.
+- **`update_fluxes` is a plain `bool`, defaulting to False**, on the classes and
+  on `LaunchMEF`: `times` are used exactly as given, estimated or not. It was
+  briefly `bool | None`, refining precisely when `times` had been estimated.
+  Refinement is what makes an estimate usable — on the README simulation the
+  estimate alone correlates 0.16 with the truth against 0.989 once refined — so
+  estimating `times` without it warns (`LaunchMEF` warns here too now, having
+  previously refined silently), as does an estimate that comes out nearly flat
+  whatever the flag. Pass `update_fluxes=True` alongside estimated `times`.
 - **Backgrounds are accepted in whatever form they were recorded**, on
   `BayesianMEF`, `ConventionalMEF`, `UncensoredEM` and `LaunchMEF` alike: a
   scalar, one offset per exposure `(n_exposures,)`, a single dark frame, one

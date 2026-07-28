@@ -50,8 +50,12 @@ def _resolve(data, threshold, times, background, update_fluxes, flux_init):
 _DEGENERATE_SPREAD = 1.5
 
 
-def _warn_about_estimate(times, update_fluxes):
-    """Flag estimates that cannot be trusted on their own."""
+def _warn_about_estimate(times, update_fluxes, stacklevel=4):
+    """Flag estimates that cannot be trusted on their own.
+
+    `stacklevel` points the warning at the caller's own constructor; the default
+    counts the classes' `_resolve` hop, `LaunchMEF` calls this directly.
+    """
     t = np.abs(np.asarray(times, dtype=float))
     spread = float(np.max(t) / max(np.min(t), 1e-30))
 
@@ -64,7 +68,7 @@ def _warn_about_estimate(times, update_fluxes):
             "`times` explicitly if you know the exposures; otherwise "
             "update_fluxes=True recovers part of the range but not all of it.",
             UserWarning,
-            stacklevel=4,
+            stacklevel=stacklevel,
         )
     elif not update_fluxes:
         warnings.warn(
@@ -74,7 +78,7 @@ def _warn_about_estimate(times, update_fluxes):
             "background. Pass update_fluxes=True so EM refines them, or "
             "`times` explicitly if you know the exposures.",
             UserWarning,
-            stacklevel=4,
+            stacklevel=stacklevel,
         )
 
 
@@ -143,9 +147,10 @@ class ExpectationMaximization(abc.ABC):
         background (np.ndarray or scalar, optional): dark counts as a scalar,
             one offset per exposure `(i,)`, a single dark frame `(M, N)`, or one
             frame per exposure (same shape as data). Defaults to 0.
-        update_fluxes (bool, optional): re-estimate the flux factors each iteration.
-            Defaults to refining whenever `times` was estimated (i.e. omitted),
-            and to leaving supplied `times` untouched. Pass True/False to override.
+        update_fluxes (bool, optional): re-estimate the flux factors each
+            iteration. Defaults to False, i.e. `times` are used as given,
+            estimated or not. Estimated `times` warn unless this is True, since
+            the estimate alone is only a starting point.
         max_flux_iteration (int, optional): stop refreshing fluxes after this many
             iterations.
     """
@@ -156,15 +161,11 @@ class ExpectationMaximization(abc.ABC):
         threshold=None,
         times=None,
         background=None,
-        update_fluxes: bool | None = None,
+        update_fluxes: bool = False,
         max_flux_iteration: int = 100,
         *,
         flux_init: str = "matched",
     ) -> None:
-        # When the exposures are estimated from the data, refine them by default;
-        # when they are supplied, trust them. Either is overridable.
-        if update_fluxes is None:
-            update_fluxes = times is None
         background = align_background(background, np.shape(data))
         threshold, times = _resolve(
             data, threshold, times, background, update_fluxes, flux_init
@@ -297,9 +298,10 @@ class BayesianMEF(UncensoredEM):
         background (np.ndarray or scalar, optional): dark counts as a scalar,
             one offset per exposure `(i,)`, a single dark frame `(M, N)`, or one
             frame per exposure (same shape as data). Defaults to 0.
-        update_fluxes (bool, optional): re-estimate the flux factors each iteration.
-            Defaults to refining whenever `times` was estimated (i.e. omitted),
-            and to leaving supplied `times` untouched. Pass True/False to override.
+        update_fluxes (bool, optional): re-estimate the flux factors each
+            iteration. Defaults to False, i.e. `times` are used as given,
+            estimated or not. Estimated `times` warn unless this is True, since
+            the estimate alone is only a starting point.
         n_iter_fluxes (int, optional): stop refreshing fluxes after this many iterations.
         n_init (int, optional): uncensored iterations used to initialise the rate.
     """
@@ -310,7 +312,7 @@ class BayesianMEF(UncensoredEM):
         threshold=None,
         times=None,
         background=None,
-        update_fluxes: bool | None = None,
+        update_fluxes: bool = False,
         n_iter_fluxes: int = 100,
         n_init: int = 100,
         *,

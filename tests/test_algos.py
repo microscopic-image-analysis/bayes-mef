@@ -162,17 +162,25 @@ def test_conventional_mef_estimates_too(scenario, assert_close):
 
 
 def test_estimated_fluxes_warn_unless_refined(scenario):
-    """Refinement is on by default; only disabling it on an estimate warns."""
+    """`update_fluxes` defaults to False, so an estimate warns until asked for."""
     data, background = scenario["data"], scenario["background"]
 
-    # Explicitly turning refinement off on an estimated flux warns.
-    with pytest.warns(UserWarning, match="flux factors were estimated"):
-        BayesianMEF(data, background=background, update_fluxes=False)
+    # Estimated fluxes without refinement warn, whether that is the default
+    # or spelled out.
+    for kw in ({}, {"update_fluxes": False}):
+        with pytest.warns(UserWarning, match="flux factors were estimated"):
+            BayesianMEF(data, background=background, **kw)
 
-    # The default refines the estimate, so construction is silent.
+    # Asking for refinement is what silences it.
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
-        BayesianMEF(data, background=background)
+        BayesianMEF(data, background=background, update_fluxes=True)
+
+    # Supplied times are used as given, and say nothing.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        em = BayesianMEF(data, times=scenario["times"], background=background)
+    assert em.update_fluxes is False
 
 
 def test_estimated_fluxes_plus_refinement_recover_the_truth():

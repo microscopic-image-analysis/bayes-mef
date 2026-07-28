@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pytest
 
@@ -194,6 +196,22 @@ def test_background_shape_mismatch_is_rejected(stack):
     n_exposures = stack["pty_stack"].shape[0]
     with pytest.raises(ValueError, match="does not fit a stack of shape"):
         LaunchMEF(stack["pty_stack"], np.zeros(n_exposures + 1))
+
+
+def test_estimated_times_warn_unless_refined(stack):
+    """`update_fluxes` defaults off here too, so the launcher has to say so."""
+    with pytest.warns(UserWarning, match="flux factors were estimated"):
+        launcher = LaunchMEF(stack["pty_stack"], stack["background"])
+    assert launcher.update_fluxes is False
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        LaunchMEF(stack["pty_stack"], stack["background"], update_fluxes=True)
+
+    # Supplied times are used as given and say nothing.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        _launch(stack)
 
 
 def test_ncpus_is_ignored_but_accepted(stack, assert_close):

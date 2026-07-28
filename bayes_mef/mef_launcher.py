@@ -22,7 +22,13 @@ from ._compat import (
     to_numpy,
     warn_if_precision_risk,
 )
-from .algos import CensoringPrior, Prior, PtychogramMean, estimate_fluxes
+from .algos import (
+    CensoringPrior,
+    Prior,
+    PtychogramMean,
+    _warn_about_estimate,
+    estimate_fluxes,
+)
 from .utils import corr, set_fluxes, set_threshold, timeit
 
 # Vectorised equivalents of the Prior classes, so priors are derived per scan
@@ -181,7 +187,9 @@ class LaunchMEF:
         pty_noisefree_stack (np.ndarray, optional): ground truth, for reporting
             the correlation of the fused result against it.
         update_fluxes (bool, optional): re-estimate the flux factors during EM.
-            Defaults to refining whenever `times` was estimated (i.e. omitted).
+            Defaults to False, i.e. `times` are used as given, estimated or not.
+            Estimated `times` are only a starting point, so pass True with them
+            unless you have a reason not to.
         flux_init (str, optional): initialiser used when `times` is omitted.
     """
 
@@ -193,7 +201,7 @@ class LaunchMEF:
         threshold=None,
         prior: type[Prior] | None = None,
         pty_noisefree_stack=None,
-        update_fluxes: bool | None = None,
+        update_fluxes: bool = False,
         flux_init: str = "matched",
     ) -> None:
         pty_stack = np.asarray(pty_stack)
@@ -202,9 +210,7 @@ class LaunchMEF:
         self.threshold = set_threshold(pty_stack) if threshold is None else threshold
         self.prior = prior
         self.pty_noisefree_stack = pty_noisefree_stack
-        # Refine the fluxes by default whenever they are estimated (times omitted);
-        # trust supplied exposures. Either is overridable.
-        self.update_fluxes = (times is None) if update_fluxes is None else update_fluxes
+        self.update_fluxes = update_fluxes
 
         background = align_background(background, pty_stack.shape, scan_axis=True)
 
@@ -213,6 +219,7 @@ class LaunchMEF:
             # background with an exposure axis needs a scan axis to broadcast.
             bg = background[:, None] if background.ndim == 3 else background
             times = estimate_fluxes(pty_stack, self.threshold, flux_init, bg)
+            _warn_about_estimate(times, self.update_fluxes, stacklevel=3)
         self.times = times
 
         # move the scan axis first: (n_scans, n_exposures, X, Y)
