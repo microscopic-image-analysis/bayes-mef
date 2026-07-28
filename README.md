@@ -1,108 +1,143 @@
 # Bayesian MEF
 [![PyPI](https://img.shields.io/pypi/v/bayes_mef)](https://pypi.org/project/bayes_mef/)
-![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)
-[![DOI](https://zenodo.org/badge/769216428.svg)](https://zenodo.org/doi/10.5281/zenodo.11103003)
+![Python 3.11+](https://img.shields.io/badge/python-3.11+-green.svg)
+[![DOI](https://img.shields.io/badge/DOI-10.1364%2FOE.524284-blue.svg)](https://doi.org/10.1364/OE.524284)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-purple.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
-Bayesian multi-exposure image fusion (MEF) is a general-purpose algorithm to achieve robust high dynamic range (HDR) imaging, particularly in scenarios with low signal-to-noise ratio (SNR) or variations in illumination intensity. This approach could especially be useful for high quality phase retrieval in coherent diffractive imaging (CDI). The algorithm, detailed in this publication ["Bayesian multi-exposure image fusion for robust high dynamic range ptychography"](https://doi.org/10.1364/OE.524284), explains the method and demonstrates the benefits for ptychography. To reproduce the results in the paper, see this [section](#reproducing-results). However, to get started, please install the package and check the demo usage below.
+Bayesian multi-exposure image fusion (MEF) is a general-purpose algorithm for robust
+high dynamic range (HDR) imaging under low SNR or varying illumination — in particular
+for phase retrieval in coherent diffractive imaging. The paper,
+["Bayesian multi-exposure image fusion for robust high dynamic range ptychography"](https://doi.org/10.1364/OE.524284),
+details the method and its benefits for ptychography ([reproducing the results](#reproducing-results)).
 
 ![demo_mef](https://github.com/microscopic-image-analysis/bayes-mef/assets/64919085/d00a8c5e-5e53-4b7e-856b-381cc99523ba)
 
-To install this package from PyPI, 
+This small library is implemented in [JAX](https://docs.jax.dev), so the same code runs on CPU/GPU/TPU. Inputs may be NumPy arrays, Python lists or JAX arrays; results come back as NumPy arrays.
+
 ```bash
 pip install bayes_mef
 ```
 
+Optionally for GPU (CUDA 12 or 13)
+
+```bash
+pip install "bayes_mef[cuda13]"  # GPU with CUDA 13; `cuda12` flag for older GPUs
+```
+
+After a GPU install, check the GPU is picked up with `bayes_mef check gpu`.
+
 ## Usage
 
-A minimal example demonstrating the usage of `BayesianMEF` by simulating some data.
-
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/microscopic-image-analysis/bayes-mef/blob/main/demo.ipynb)
+A minimal example, simulating some data
+([Colab](https://colab.research.google.com/github/microscopic-image-analysis/bayes-mef/blob/main/demo.ipynb)):
 
 ```python
-from bayes_mef import BayesianMEF
+from bayes_mef import BayesianMEF, ConventionalMEF
 from skimage.data import camera
 import numpy as np
 
-# simulation params
 truth = camera()
-background = 60  # some background
-times = np.array([0.1, 1, 10])  # exposure times or equivalently flux factors
-threshold = 1500 # detector limit
+background = 60
+times = np.array([0.1, 1, 10])  # exposure times / flux factors
+threshold = 1500                # detector limit
 
-# poisson data based on image formation model that is overexposed
-data = [np.random.poisson(time * truth + background) for time in times]
+# overexposed Poisson data from the image-formation model
+data = [np.random.poisson(t * truth + background) for t in times]
 data_saturated = np.clip(data, None, threshold, dtype="float")
 
-# Bayesian MEF with optional field `update_fluxes`. Set it to `True` when
-# flux factors (exposure times) are not accurately known.
-mef_em = BayesianMEF(data_saturated, threshold, times, background, update_fluxes=False)
+mef_em = BayesianMEF(data_saturated, threshold, times, background)
 mef_em.run(n_iter=100)
 fused_em = mef_em.fused_image.copy()
-```
 
-Additionally, one can also use the `ConventionalMEF` method as given in the paper.
-
-```python
-from bayes_mef import ConventionalMEF
+# ConventionalMEF is the paper's MLE baseline, with the same interface
 mef_mle = ConventionalMEF(data_saturated, threshold, times, background)
 mef_mle.mle()
 fused_mle = mef_mle.fused_image.copy()
 ```
-### Parallelized implementatation
 
-In ptychography, one needs to fuse diffraction patterns for every scan position. Processing this for data over all scan positions can be slow for an iterative algorithm. Therefore, one can use the parallelized implementation for MEF `LaunchMEF`. Check the example below
+### Precision
+
+Single precision by default (accurate for censoring thresholds up to ~4096). For 16-bit detectors, switch to double precision *before* creating any array; a warning flags the risk otherwise:
+
+```python
+import bayes_mef
+bayes_mef.enable_x64()  # or set JAX_ENABLE_X64=1
+```
+
+### When the exposures are not known
+
+Omit `times` (and `threshold`) and they are estimated from the data, initialised from the non-saturated pixels (`flux_init="matched"`). The estimate is only a starting point, so **pass `update_fluxes=True` with it** and let EM refine it:
+
+```python
+mef_em = BayesianMEF(data_saturated, background=background, update_fluxes=True)
+mef_em.run(n_iter=200)
+```
+
+`update_fluxes` defaults to False — `times` are used exactly as given, estimated or not — and estimating them without it warns. On the simulation above, the unrefined estimate correlates 0.16 with the truth against 0.989 once refined. `flux_init="uncensored"` selects the v0.1.9 initialiser, whose ratios compress under heavy censoring.
+
+Once the background dominates the signal, i.e., the weak, low-SNR regime the [paper](https://doi.org/10.1364/OE.524284) targets: summed counts carry almost no information about the exposures, and it is EM's iterative background handling that recovers the range; a warning is raised when the estimate comes out nearly flat. Estimated fluxes are relative, so the fused image is on a relative scale. **Supply the real exposure times whenever you know them.**
+
+### Fusing a 4D ptychogram dataset
+
+For ptychography, we record multiple exposures per scan position. `LaunchMEF` fuses every scan position with a single vectorised program (CPU or GPU):
 
 ```python
 from bayes_mef import LaunchMEF
 
 launch_mef = LaunchMEF(
-    ptychogram_stack,    # ptychogram shape (n_exposures, n_scans, dp_x, dp_y)
-    background,          # background shape (n_exposures, n_scans, dp_x, dp_y)
-    flux_factors=None,   # if set to `None`, calculates automatically
-    threshold=None,      # if set to `None`, calculates automatically
-    update_fluxes=False, # set to `True` if you want to update fluxes
+    ptychogram_stack,    # (n_exposures, n_scans, dp_x, dp_y)
+    background,          # a number, one dark frame, or one per exposure
+    times=None,          # None -> estimated from the data
+    threshold=None,      # None -> estimated automatically
+    update_fluxes=False, # True -> EM refines the fluxes; pair with estimated times
+    flux_init="matched",
 )
 
-# runs Bayesian MEF in parallel by defining the number of CPUs `n_cpus`;
-# returns the fused diffraction patterns with shape (n_scans, dp_x, dp_y) and updated flux factors
-n_cpus = 20
-n_iter = 150
-fused_ptyem_stack, em_flux_factors = launch_mef.run_em(n_iter, n_cpus)
+# returns fused patterns (n_scans, dp_x, dp_y) and the flux factors
+fused_ptyem_stack, em_flux_factors = launch_mef.run_em(n_iter=150)
+
+# or the conventional MLE baseline over the whole stack (just the fused patterns)
+fused_ptymle_stack = launch_mef.run_mle()
 ```
 
-For a detailed usage, please check [synthetic_mef.py](scripts/synthetic_mef.py) that uses synthetic ptychography data.
+Backgrounds are taken however they were recorded, on `LaunchMEF` and on the single stack classes alike: a scalar, one offset per exposure `(n_exposures,)`, a single dark frame `(dp_x, dp_y)`, one frame per exposure `(n_exposures, dp_x, dp_y)`, or one per image (the full stack shape). Each is given its exposure axis explicitly, so a per-exposure vector is never spread along the image columns, and a mismatched shape raises instead of broadcasting into something that quietly means the wrong thing.
+
+The old `n_cpus` argument is accepted but ignored (it warns), since there are no worker processes to size any more.
+
+Scans are fused in chunks sized to the device's free memory, so a stack larger than device memory still works. Set `batch_size` yourself if you hit a `MemoryError` or fuse alongside other work (results do not depend on it):
+
+```python
+fused, fluxes = launch_mef.run_em(n_iter, batch_size=8)
+```
+
+See [synthetic_mef.py](scripts/synthetic_mef.py) for detailed usage on synthetic
+ptychography data, and [benchmarks/FINDINGS.md](benchmarks/FINDINGS.md) for a study
+of when each method helps and for performance benchmarks.
 
 ## Reproducing results
 
-To reproduce the ptychographic reconstruction results from the paper, please install the package in development mode and download the necessary data. This is explained in the following steps:
+To reproduce the ptychographic reconstructions from the paper:
 
-1. Please clone this repository and create a conda environment.
+1. Clone the repo:
    ```bash
    git clone https://github.com/microscopic-image-analysis/bayes-mef.git
    cd bayes-mef
-   conda create --name bayes-mef-venv python=3.11.5 
    ```
-2. Now activate the environment and install the *pinned* dependencies.
+2. Install the pinned dependencies with [uv](https://docs.astral.sh/uv/), then prefix
+   commands with `uv run` (e.g. `uv run python scripts/synthetic_mef.py`):
    ```bash
-   conda activate bayes-mef-venv
-   pip install -r requirements.txt
+   uv sync --locked --group scripts
    ```
-> [!NOTE] 
-> The package is maintained via python package manager [Poetry](https://python-poetry.org/), so instead of using `pip` for installing the package and its requirements, 
-> installation can also simply be done as `poetry install`.
-
-3. Download the data from [Zenodo](https://zenodo.org/doi/10.5281/zenodo.10964222) with the following command:
+3. Download the data from [Zenodo](https://zenodo.org/doi/10.5281/zenodo.10964222):
    ```bash
    ./download_data.sh
    ```
-
-4. Optional: For faster ptychographic reconstructions using GPU, please install `cupy` as given under its [installation guide](https://docs.cupy.dev/en/stable/install.html).
-
-5. Run files from the [scripts/](scripts) directory for plotting the results.
+4. Optional: install [`cupy`](https://docs.cupy.dev/en/stable/install.html) for faster
+   GPU reconstructions.
+5. Run files from [scripts/](scripts) to plot the results.
 
 ## Citation
-If you found this algorithm or the publication useful, please cite us at:
+If this algorithm or the publication was useful, please cite:
 ```tex
 @article{Kodgirwar:24,
 author = {Shantanu Kodgirwar and Lars Loetgering and Chang Liu and Aleena Joseph and Leona Licht and Daniel S. Penagos Molina and Wilhelm Eschen and Jan Rothhardt and Michael Habeck},
@@ -118,5 +153,3 @@ url = {https://opg.optica.org/oe/abstract.cfm?URI=oe-32-16-28090},
 doi = {10.1364/OE.524284},
 }
 ```
-
-

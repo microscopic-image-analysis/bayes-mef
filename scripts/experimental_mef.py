@@ -19,7 +19,7 @@ def load_data(filepath, pty_key="ptychogram"):
 def return_params(loadpath):
     params = {}
     with h5py.File(loadpath, "r") as hf:
-        for key in hf.keys():
+        for key in hf:
             params[key] = hf[key][()]
 
     return params
@@ -38,12 +38,12 @@ if __name__ == "__main__":
     for i in range(3):
         for j in range(3):
             # acquisitions
-            acq_filename = f"acq{i+1}_mea{j+1}.hdf5"
-            load_path = os.path.join(PATH, f"acq{i+1}/{acq_filename}")
+            acq_filename = f"acq{i + 1}_mea{j + 1}.hdf5"
+            load_path = os.path.join(PATH, f"acq{i + 1}/{acq_filename}")
 
             # background
-            bg_filename = f"bg_acq{i+1}_mea{j+1}.hdf5"
-            bg_path = os.path.join(PATH, f"bg_acq{i+1}/{bg_filename}")
+            bg_filename = f"bg_acq{i + 1}_mea{j + 1}.hdf5"
+            bg_path = os.path.join(PATH, f"bg_acq{i + 1}/{bg_filename}")
 
             pty.append(load_data(load_path))
             bg.append(load_data(bg_path))
@@ -60,7 +60,6 @@ if __name__ == "__main__":
 
     # params for Parallel EM method
     em_niter = 200  # n_iter for Full EM
-    ncpus = 35  # parallel computation
 
     # instantiate the MEF launcher, letting it estimate
     # times and threshold internally
@@ -88,5 +87,4 @@ if __name__ == "__main__":
         mle_switch=True,
         em_switch=True,
         n_iter_em=em_niter,
-        ncpus_em=ncpus,
     )

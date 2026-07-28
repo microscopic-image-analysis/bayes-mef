@@ -1,0 +1,123 @@
+# Changelog
+
+## 0.2.0
+
+Algorithms reimplemented in JAX, and packaging moved from Poetry to uv. The public
+API is unchanged: `BayesianMEF`, `ConventionalMEF` and `LaunchMEF` keep their
+constructor signatures, `run()` semantics and `.fused_image` attribute.
+
+### Changed
+
+- **JAX backend.** The EM iteration is a jitted `lax.scan` and runs on CPU or GPU.
+  Inputs may be NumPy arrays, Python lists or JAX arrays; all public results come
+  back as NumPy arrays, so `.flat`, h5py writes and in-place idioms still work.
+- **Single precision by default.** Call `bayes_mef.enable_x64()` or set
+  `JAX_ENABLE_X64=1` for double precision. A warning is raised when the censoring
+  threshold exceeds 4096, above which float32 loses accuracy for rates near the
+  threshold (~10% at a 16-bit threshold).
+- **`LaunchMEF` no longer uses `joblib`.** Scan positions are fused by one
+  vectorised, jitted program (`vmap`) that runs unchanged on CPU or GPU, chunked
+  so device memory stays bounded regardless of stack size. `run_em`'s `ncpus`
+  argument is now ignored (kept, and warns, so existing call sites keep working);
+  a new `batch_size` keyword caps how many scan positions are fused at once.
+- **Python 3.11+** (nominally 3.9 before, though `algos.py` already required
+  3.10), and the `<3.13` cap is gone.
+- Packaging is PEP 621 with hatchling, and `uv.lock` replaces `poetry.lock`. The
+  hand-maintained `requirements.txt` is gone; install with uv, or `pip install
+  bayes_mef` for the library alone.
+
+- **`threshold` and `times` are optional on `BayesianMEF`, `UncensoredEM` and
+  `ConventionalMEF`**, estimated from the data with the same helpers `LaunchMEF`
+  uses. Because a naive estimate only counts uncensored pixels it is compressed
+  towards 1 when censoring is heavy, so when `times` is omitted the estimate is
+  now initialised from the non-saturated pixels and refined in EM by default
+  (see below): on the README simulation, the older estimate alone correlates 0.16
+  with the truth against 0.989 once refined.
+- **A second flux initialiser**, selected with `flux_init` on the classes and
+  `LaunchMEF`, or with `background=` and `common_mask=True` on `set_fluxes`
+  directly. `"matched"` subtracts the background and uses only pixels uncensored
+  in every exposure. For strongly scattering data this is a large improvement:
+  on a simulated ptychogram with true ratios 0.25:0.5:1:2:4:8 it returns
+  0.24:0.50:1.00:2.01:4.03:8.11 against the default's
+  0.58:1.16:1.00:1.06:1.35:1.19, and on the README simulation it matches knowing
+  the true exposures (0.989) in 5 iterations rather than 55 with refinement.
+
+  It does **not** help for weakly scattering, low SNR data. Once the background
+  is comparable to the signal, summed counts carry almost no information about
+  the exposures whichever pixels are summed: with true ratios 0.25:1:4:16 the
+  default returns 1.02:1.00:1.01:0.96 and `"matched"` 1.05:1.00:1.09:1.26. What
+  recovers the range there is EM's iterative treatment of the background, via
+  `update_fluxes=True` (to 0.76:1.00:1.23:15.55), which is the regime the paper
+  is about.
+
+  When `times` is omitted, `BayesianMEF`, `ConventionalMEF` and `LaunchMEF` now
+  estimate it with `flux_init="matched"`, which tracks the true exposures most
+  reliably under censoring. `flux_init="uncensored"` selects the v0.1.9
+  initialiser. The `set_fluxes` helper's own default stays `"uncensored"`,
+  bit-identical to v0.1.9, for direct callers whose published results depend
+  on it.
+- **`update_fluxes` is a plain `bool`, defaulting to False**, on the classes and
+  on `LaunchMEF`: `times` are used exactly as given, estimated or not. It was
+  briefly `bool | None`, refining precisely when `times` had been estimated.
+  Refinement is what makes an estimate usable — on the README simulation the
+  estimate alone correlates 0.16 with the truth against 0.989 once refined — so
+  estimating `times` without it warns (`LaunchMEF` warns here too now, having
+  previously refined silently), as does an estimate that comes out nearly flat
+  whatever the flag. Pass `update_fluxes=True` alongside estimated `times`.
+- **Backgrounds are accepted in whatever form they were recorded**, on
+  `BayesianMEF`, `ConventionalMEF`, `UncensoredEM` and `LaunchMEF` alike: a
+  scalar, one offset per exposure `(n_exposures,)`, a single dark frame, one
+  frame per exposure, or one per image. Each is given its exposure axis
+  explicitly, so a per-exposure vector is no longer spread along the image
+  columns by NumPy's trailing-axis rule, and a shape that fits none of the forms
+  now raises instead of broadcasting into something that means the wrong thing.
+  `background` also defaults to `None` (i.e. 0) on `LaunchMEF`, as it already did
+  on the classes. A per-image background that does not vary across scan
+  positions — `np.broadcast_to(frame, stack.shape)` — collapses to the
+  per-exposure form, so it is uploaded once rather than re-sent with every chunk.
+- `set_fluxes` and `set_threshold` moved to `bayes_mef.utils` so the single
+  image classes can use them. They are still importable from
+  `bayes_mef.mef_launcher` and from the top level.
+
+### Fixed
+
+- `joblib` was imported by `mef_launcher.py` but declared nowhere, so PyPI
+  installs only worked by accident. It is gone entirely.
+- `matplotlib` and `scikit-image` were declared as runtime dependencies but are
+  used only by `scripts/` and the demo notebook; they moved to dependency groups.
+- Integer `data` no longer silently truncates. The fused image was allocated with
+  the input dtype, so integer counts rounded the estimate at every iteration;
+  inputs are now always promoted to float.
+- `LaunchMEF` accepts `background=None`.
+- `LaunchMEF` no longer uploads the whole ptychogram to the device before
+  chunking, which exhausted GPU memory on realistic stacks while appearing to
+  work on CPU.
+- The `n_init` warm start ran twice during `BayesianMEF` construction. The result
+  was identical, so this is purely a 2x saving in construction cost.
+- `utils.corr` and `utils.crop_image` accept JAX arrays.
+
+### Docs
+
+- `benchmarks/FINDINGS.md` (reproduced by `mef_regime_study.py`, plotted by
+  `plot_findings.py`) studies where `BayesianMEF` beats `ConventionalMEF`, how far
+  to overexpose, and how to estimate unknown flux factors — the study behind the
+  `flux_init="matched"` + refinement defaults above.
+
+### Notes on numerical fidelity
+
+Results are validated against the frozen 0.1.9 NumPy implementation, kept in
+`tests/_reference_numpy.py`. Under double precision the port matches it to
+`rtol=1e-9` everywhere except pixels sitting exactly on the censored-Poisson
+fallback boundary, where the expectation degrades to `rate` because both survival
+terms underflow. Which pixels land on that boundary depends on the incomplete
+gamma implementation, so SciPy, XLA-CPU and XLA-GPU disagree on roughly 1 pixel
+in 10,000.
+
+Two pre-existing behaviours are reproduced deliberately rather than fixed, to keep
+published results comparable:
+
+- The censored expectation uses `sf(t-1)/sf(t)`, i.e. `E[X | X >= t+1]` rather
+  than the `E[X | X >= t]` implied by the censoring rule -- an offset of about one
+  count in 1500.
+- The warm start always runs under the default gamma prior, because `LaunchMEF`
+  assigns `alpha`/`beta` after the EM object is constructed.

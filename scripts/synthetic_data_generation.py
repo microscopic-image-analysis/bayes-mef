@@ -164,9 +164,9 @@ def scan_grid(n_scans=200, radius=100, return_grid=False, verbose=True):
     averageDistance = np.mean(distances) * 1e6
 
     if verbose:
-        print("average step size: %.1f (um)" % averageDistance)
-        print(f"probe diameter: {beamSize*1e6:.2f}")
-        print("number of scan points: %d" % numFrames)
+        print(f"average step size: {averageDistance:.1f} (um)")
+        print(f"probe diameter: {beamSize * 1e6:.2f}")
+        print(f"number of scan points: {numFrames:d}")
 
     scan_props = {
         "positions": positions,

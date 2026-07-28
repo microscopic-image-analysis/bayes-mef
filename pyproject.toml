@@ -1,21 +1,72 @@
-[tool.poetry]
-name = "bayes_mef"
-version = "0.1.9"
-description = "Python implementation of the Bayesian MEF method"
-authors = ["Shantanu Kodgirwar <shantanu.kodgirwar@uni-jena.de>", "Michael Habeck <michael.habeck@uni-jena.de>"]
+[project]
+name = "bayes-mef"
+version = "0.2.0"
+description = "Bayesian multi-exposure image fusion for robust HDR imaging"
 readme = "README.md"
+requires-python = ">=3.11"
 license = "BSD-3-Clause"
-repository = "https://github.com/microscopic-image-analysis/bayes-mef"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Shantanu Kodgirwar", email = "shantanu.kodgirwar@uni-jena.de" },
+    { name = "Michael Habeck", email = "michael.habeck@uni-jena.de" },
+]
+keywords = ["HDR", "image-fusion", "ptychography", "expectation-maximization", "jax"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "jax>=0.8",
+    "numpy>=1.24",
+    "scipy>=1.11",
+    "h5py>=3.9",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.9,<3.13"
-numpy = ">=1.22,<3.0"
-matplotlib = ">=3.7,<4.0"
-scipy = ">=1.11,<2.0"
-scikit-image = ">=0.21,<1.0"
-h5py = ">=3.9,<4.0"
-tqdm = ">=4.66,<5.0"
+[project.optional-dependencies]
+cuda12 = ["jax[cuda12]"]
+cuda13 = ["jax[cuda13]"]
+
+[project.scripts]
+bayes_mef = "bayes_mef.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/microscopic-image-analysis/bayes-mef"
+Repository = "https://github.com/microscopic-image-analysis/bayes-mef"
+Issues = "https://github.com/microscopic-image-analysis/bayes-mef/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-xdist>=3",
+    "ruff>=0.6",
+    "scikit-image>=0.21",
+    # TODO(phase-4): drop once LaunchMEF's joblib path is replaced by vmap.
+    "joblib>=1.3",
+]
+scripts = ["matplotlib>=3.7", "scikit-image>=0.21", "tqdm>=4.66"]
+notebook = ["jupyter", "matplotlib>=3.7", "scikit-image>=0.21"]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["bayes_mef"]
+
+[tool.hatch.build.targets.sdist]
+include = ["bayes_mef", "tests", "README.md", "LICENSE"]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+extend-exclude = ["tests/_reference_numpy.py"]
+
+[tool.ruff.lint]
+extend-select = ["I", "B", "C4", "UP"]

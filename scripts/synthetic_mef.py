@@ -46,9 +46,6 @@ def main(PATH, rho=0.5):
     ptychogram_noisy = simdata["ptychogram_noisy"]
     background = simdata["background"]
 
-    # Parallel EM by setting the no. of CPU cores based on your computer
-    ncpus = 35  # parallel computation
-
     # save noisefree data
     noisefree_filename = f"truth/truth_synthetic_rho{rho}.hdf5"
     filepath_noisfree = os.path.join(PATH, noisefree_filename)
@@ -77,14 +74,12 @@ def main(PATH, rho=0.5):
         mle_switch=True,
         em_switch=True,
         n_iter_em=200,
-        ncpus_em=ncpus,
         save_misc=True,
         separate_fused_dir=True,
     )
 
 
 if __name__ == "__main__":
-
     # fuses data for every rho
     run_all_rhos = False
     PATH = "data/synthetic/"

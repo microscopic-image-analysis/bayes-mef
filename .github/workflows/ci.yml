@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked --python ${{ matrix.python-version }}
+      - name: Lint
+        run: |
+          uv run ruff check bayes_mef tests scripts benchmarks
+          uv run ruff format --check bayes_mef tests scripts benchmarks
+      - name: Test (float32, default)
+        run: uv run pytest -q
+      - name: Test (float64)
+        env:
+          JAX_ENABLE_X64: "1"
+        run: uv run pytest -q
