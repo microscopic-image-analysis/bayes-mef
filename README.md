@@ -123,7 +123,6 @@ To reproduce the ptychographic reconstructions from the paper:
    ```bash
    uv sync --locked --group scripts
    ```
-   A `requirements.txt` is also exported for pip users (`pip install -r requirements.txt`).
 3. Download the data from [Zenodo](https://zenodo.org/doi/10.5281/zenodo.10964222):
    ```bash
    ./download_data.sh
