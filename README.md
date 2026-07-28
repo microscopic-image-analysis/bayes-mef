@@ -70,7 +70,7 @@ mef_em.run(n_iter=200)
 
 `update_fluxes` defaults to False — `times` are used exactly as given, estimated or not — and estimating them without it warns. On the simulation above, the unrefined estimate correlates 0.16 with the truth against 0.989 once refined. `flux_init="uncensored"` selects the v0.1.9 initialiser, whose ratios compress under heavy censoring.
 
-Once the background dominates the signal — the weak, low-SNR regime the [paper](https://doi.org/10.1364/OE.524284) targets — summed counts carry almost no information about the exposures, and it is EM's iterative background handling, not the initialiser, that recovers the range; a warning is raised when the estimate comes out nearly flat. Estimated fluxes are relative, so the fused image is on a relative scale. **Supply the real exposure times whenever you know them.**
+Once the background dominates the signal, i.e., the weak, low-SNR regime the [paper](https://doi.org/10.1364/OE.524284) targets: summed counts carry almost no information about the exposures, and it is EM's iterative background handling that recovers the range; a warning is raised when the estimate comes out nearly flat. Estimated fluxes are relative, so the fused image is on a relative scale. **Supply the real exposure times whenever you know them.**
 
 ### Fusing a 4D ptychogram dataset
 
