@@ -16,8 +16,10 @@ This small library is implemented in [JAX](https://docs.jax.dev), so the same co
 
 ```bash
 pip install bayes_mef
-pip install "bayes_mef[cuda12]"  # GPU (CUDA 12, Linux); `cuda13` for newer GPUs
+pip install "bayes_mef[cuda13]"  # GPU with CUDA 13; `cuda12` flag for older GPUs
 ```
+
+After a GPU install, check the GPU is picked up with `bayes_mef check gpu`.
 
 ## Usage
 
@@ -70,9 +72,9 @@ Pass `update_fluxes=False` or `flux_init="uncensored"` (the v0.1.9 initialiser, 
 
 Once the background dominates the signal — the weak, low-SNR regime the [paper](https://doi.org/10.1364/OE.524284) targets — summed counts carry almost no information about the exposures, and it is EM's iterative background handling, not the initialiser, that recovers the range; a warning is raised when the estimate comes out nearly flat. Estimated fluxes are relative, so the fused image is on a relative scale. **Supply the real exposure times whenever you know them.**
 
-### Fusing a whole ptychogram
+### Fusing a 4D ptychogram dataset
 
-`LaunchMEF` fuses every scan position with a single vectorised program (CPU or GPU):
+For ptychography, we record multiple exposures per scan position. `LaunchMEF` fuses every scan position with a single vectorised program (CPU or GPU):
 
 ```python
 from bayes_mef import LaunchMEF
@@ -88,34 +90,22 @@ launch_mef = LaunchMEF(
 
 # returns fused patterns (n_scans, dp_x, dp_y) and the flux factors
 fused_ptyem_stack, em_flux_factors = launch_mef.run_em(n_iter=150)
+
+# or the conventional MLE baseline over the whole stack (just the fused patterns)
+fused_ptymle_stack = launch_mef.run_mle()
 ```
 
-The old `n_cpus` argument is accepted but ignored (it warns), since there are no
-worker processes to size any more.
+The old `n_cpus` argument is accepted but ignored (it warns), since there are no worker processes to size any more.
 
-Scans are fused in chunks sized to the device's free memory, so a stack larger than
-device memory still works. Set `batch_size` yourself if you hit a `MemoryError` or
-fuse alongside other work (results do not depend on it):
+Scans are fused in chunks sized to the device's free memory, so a stack larger than device memory still works. Set `batch_size` yourself if you hit a `MemoryError` or fuse alongside other work (results do not depend on it):
 
 ```python
 fused, fluxes = launch_mef.run_em(n_iter, batch_size=8)
 ```
 
-### Performance
-
-Fusing 256 scan positions of 6 exposures at 256x256, 150 EM iterations, on a 64-core
-host with an NVIDIA H200 (`benchmarks/bench_mef.py`, single precision). Vectorising the
-whole scan stack into one compiled program is the win — plain JAX on CPU already beats
-32 joblib workers, so there is no separate parallel implementation to choose:
-
-| backend                               | time    | speedup |
-| ------------------------------------- | ------- | ------- |
-| NumPy + joblib, 32 processes (v0.1.9) | 41.1 s  | 1.0x    |
-| JAX, CPU                              | 17.4 s  | 2.4x    |
-| JAX, H200 GPU                         |  3.5 s  | 11.8x   |
-
 See [synthetic_mef.py](scripts/synthetic_mef.py) for detailed usage on synthetic
-ptychography data.
+ptychography data, and [benchmarks/FINDINGS.md](benchmarks/FINDINGS.md) for a study
+of when each method helps and for performance benchmarks.
 
 ## Reproducing results
 

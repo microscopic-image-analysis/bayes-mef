@@ -29,6 +29,9 @@ dependencies = [
 cuda12 = ["jax[cuda12]"]
 cuda13 = ["jax[cuda13]"]
 
+[project.scripts]
+bayes_mef = "bayes_mef.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/microscopic-image-analysis/bayes-mef"
 Repository = "https://github.com/microscopic-image-analysis/bayes-mef"
