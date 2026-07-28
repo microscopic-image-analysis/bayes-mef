@@ -2,6 +2,17 @@
 
 import importlib
 from importlib.metadata import PackageNotFoundError, version
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Never executed. The public names are bound lazily below, which leaves type
+    # checkers and editors with nothing to resolve, so "go to definition" on
+    # `from bayes_mef import BayesianMEF` lands nowhere. These imports exist for
+    # them alone; at runtime the lazy path is still the only one.
+    from ._compat import enable_x64
+    from .algos import BayesianMEF, ConventionalMEF
+    from .mef_launcher import LaunchMEF
+    from .utils import set_fluxes, set_threshold
 
 __all__ = [
     "BayesianMEF",
