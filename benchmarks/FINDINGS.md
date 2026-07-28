@@ -188,3 +188,19 @@ noise of it.
   strategy recovers the signal.
 - When fluxes are unknown, use `flux_init="matched"` + `update_fluxes=True`;
   calibrate exposure times independently where possible.
+
+---
+
+## Performance
+
+Fusing 256 scan positions of 6 exposures at 256×256, 150 EM iterations, on a
+64-core host with an NVIDIA H200 (`bench_mef.py`, single precision). Vectorising
+the whole scan stack into one compiled program is the win — plain JAX on CPU
+already beats 32 joblib worker processes, so there is no separate parallel
+implementation to choose between:
+
+| backend                               | time    | speedup |
+| ------------------------------------- | ------- | ------- |
+| NumPy + joblib, 32 processes (v0.1.9) | 41.1 s  | 1.0×    |
+| JAX, CPU                              | 17.4 s  | 2.4×    |
+| JAX, H200 GPU                         |  3.5 s  | 11.8×   |
