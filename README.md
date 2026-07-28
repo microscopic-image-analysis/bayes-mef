@@ -16,6 +16,11 @@ This small library is implemented in [JAX](https://docs.jax.dev), so the same co
 
 ```bash
 pip install bayes_mef
+```
+
+Optionally for GPU (CUDA 12 or 13)
+
+```bash
 pip install "bayes_mef[cuda13]"  # GPU with CUDA 13; `cuda12` flag for older GPUs
 ```
 
