@@ -33,6 +33,74 @@ def as_background(x):
     return as_array(0.0 if x is None else x)
 
 
+def align_background(background, stack_shape, *, scan_axis=False):
+    """Lay a recorded background out so it broadcasts against the stack.
+
+    Backgrounds arrive in whatever form the experiment produced: a number, one
+    offset per exposure, a single dark frame, one frame per exposure, or one per
+    image. All of them describe the same thing, but NumPy lines shapes up from
+    the trailing axis, so only some happen to broadcast correctly against a
+    stack -- a per-exposure vector silently spreads along the image columns
+    instead. Each form is therefore given its exposure axis explicitly here,
+    once, so nothing downstream has to reason about the layout again.
+
+    `stack_shape` is the stack as the caller holds it, exposures first:
+    (n_exposures, *image), or (n_exposures, n_scans, *image) with
+    `scan_axis=True`. Accepted backgrounds, in that same layout:
+
+        None, scalar, (1,)      one offset for the whole stack
+        (n_exposures,)          one offset per exposure
+        image                   one dark frame, shared by every exposure
+        (n_exposures, *image)   one dark frame per exposure
+        stack_shape             one dark frame per image (scan_axis only)
+
+    Anything of the right rank whose axes are 1 or the stack's own length is
+    accepted too, so a background already written as (n_exposures, 1, 1) or
+    (1, X, Y) passes through untouched. Rank is what disambiguates the forms,
+    so a shape that is merely broadcastable by NumPy's trailing-axis rule is
+    rejected rather than guessed at.
+
+    Returns a NumPy array in the caller's layout. A per-image background that
+    does not actually vary across scan positions -- `np.broadcast_to(frame,
+    stack.shape)`, the usual way of saying "this frame everywhere" -- collapses
+    to the per-exposure form, so the launcher uploads it once rather than
+    re-sending a stack-sized copy with every chunk.
+    """
+    bg = np.asarray(0.0 if background is None else background)
+    stack_shape = tuple(stack_shape)
+    n_exposures = stack_shape[0]
+    image = stack_shape[2:] if scan_axis else stack_shape[1:]
+
+    def fits(target):
+        return len(bg.shape) == len(target) and all(
+            b in (1, t) for b, t in zip(bg.shape, target, strict=True)
+        )
+
+    if bg.ndim == 0 or bg.shape == (1,):
+        return bg.reshape(())
+
+    if bg.shape == (n_exposures,):
+        return bg.reshape((n_exposures,) + (1,) * len(image))
+
+    if fits(image) or fits((n_exposures, *image)):
+        return bg
+
+    if scan_axis and fits(stack_shape):
+        # A singleton or zero-strided scan axis means the frame was broadcast,
+        # not measured per position, so the axis carries nothing worth keeping.
+        if bg.shape[1] == 1 or bg.strides[1] == 0:
+            return bg[:, 0]
+        return bg
+
+    accepted = [f"a scalar, {(n_exposures,)}, {image}, {(n_exposures, *image)}"]
+    if scan_axis:
+        accepted.append(f"or {stack_shape}")
+    raise ValueError(
+        f"background shape {bg.shape} does not fit a stack of shape "
+        f"{stack_shape}. Expected {' '.join(accepted)}."
+    )
+
+
 def to_numpy(x):
     """Public results are NumPy, so downstream `.flat`, h5py and in-place idioms work."""
     return np.asarray(x)

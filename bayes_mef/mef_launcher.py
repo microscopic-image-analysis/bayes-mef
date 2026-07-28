@@ -15,7 +15,13 @@ import jax.numpy as jnp
 import numpy as np
 
 from . import em, kernels
-from ._compat import as_array, default_dtype, to_numpy, warn_if_precision_risk
+from ._compat import (
+    align_background,
+    as_array,
+    default_dtype,
+    to_numpy,
+    warn_if_precision_risk,
+)
 from .algos import CensoringPrior, Prior, PtychogramMean, estimate_fluxes
 from .utils import corr, set_fluxes, set_threshold, timeit
 
@@ -159,12 +165,30 @@ def _fuse_one(
 
 
 class LaunchMEF:
-    """Interface for launching MEF"""
+    """Interface for launching MEF.
+
+    Args:
+        pty_stack (np.ndarray): (n_exposures, n_scans, X, Y) ptychogram.
+        background (np.ndarray or scalar, optional): dark counts, in whatever
+            form they were recorded -- a scalar, one offset per exposure
+            `(n_exposures,)`, a single dark frame `(X, Y)`, one frame per
+            exposure `(n_exposures, X, Y)`, or one per image, matching
+            `pty_stack`. See `align_background`. Defaults to 0 when None.
+        times (list, optional): acquisition times or flux factors, one per
+            exposure. Estimated from the data when omitted.
+        threshold (float, optional): censoring threshold. Estimated when omitted.
+        prior (type[Prior], optional): gamma prior applied per scan position.
+        pty_noisefree_stack (np.ndarray, optional): ground truth, for reporting
+            the correlation of the fused result against it.
+        update_fluxes (bool, optional): re-estimate the flux factors during EM.
+            Defaults to refining whenever `times` was estimated (i.e. omitted).
+        flux_init (str, optional): initialiser used when `times` is omitted.
+    """
 
     def __init__(
         self,
         pty_stack,
-        background,
+        background=None,
         times=None,
         threshold=None,
         prior: type[Prior] | None = None,
@@ -182,16 +206,12 @@ class LaunchMEF:
         # trust supplied exposures. Either is overridable.
         self.update_fluxes = (times is None) if update_fluxes is None else update_fluxes
 
-        background = np.zeros(1) if background is None else np.asarray(background)
+        background = align_background(background, pty_stack.shape, scan_axis=True)
 
         if times is None:
             # The stack is still (n_exposures, n_scans, X, Y) here, so a shared
-            # (n_exposures, X, Y) background needs a scan axis to broadcast.
-            bg = (
-                background[:, None]
-                if background.ndim == pty_stack.ndim - 1
-                else background
-            )
+            # background with an exposure axis needs a scan axis to broadcast.
+            bg = background[:, None] if background.ndim == 3 else background
             times = estimate_fluxes(pty_stack, self.threshold, flux_init, bg)
         self.times = times
 

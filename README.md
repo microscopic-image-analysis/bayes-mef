@@ -80,11 +80,11 @@ For ptychography, we record multiple exposures per scan position. `LaunchMEF` fu
 from bayes_mef import LaunchMEF
 
 launch_mef = LaunchMEF(
-    ptychogram_stack,   # (n_exposures, n_scans, dp_x, dp_y)
-    background,         # same shape as the stack
-    times=None,         # None -> estimated from the data (then refined)
-    threshold=None,     # None -> estimated automatically
-    update_fluxes=None, # None -> refine when `times` is estimated
+    ptychogram_stack,    # (n_exposures, n_scans, dp_x, dp_y)
+    background,          # a number, one dark frame, or one per exposure
+    times=None,          # None -> estimated from the data (then refined)
+    threshold=None,      # None -> estimated automatically
+    update_fluxes=None,  # None -> refine when `times` is estimated
     flux_init="matched",
 )
 
@@ -94,6 +94,8 @@ fused_ptyem_stack, em_flux_factors = launch_mef.run_em(n_iter=150)
 # or the conventional MLE baseline over the whole stack (just the fused patterns)
 fused_ptymle_stack = launch_mef.run_mle()
 ```
+
+Backgrounds are taken however they were recorded, on `LaunchMEF` and on the single stack classes alike: a scalar, one offset per exposure `(n_exposures,)`, a single dark frame `(dp_x, dp_y)`, one frame per exposure `(n_exposures, dp_x, dp_y)`, or one per image (the full stack shape). Each is given its exposure axis explicitly, so a per-exposure vector is never spread along the image columns, and a mismatched shape raises instead of broadcasting into something that quietly means the wrong thing.
 
 The old `n_cpus` argument is accepted but ignored (it warns), since there are no worker processes to size any more.
 

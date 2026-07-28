@@ -59,6 +59,17 @@ constructor signatures, `run()` semantics and `.fused_image` attribute.
   `"uncensored"`, bit-identical to v0.1.9, for direct callers whose published
   results depend on it. A warning is raised when refinement is disabled on an
   estimate, and regardless when the estimate comes out nearly flat.
+- **Backgrounds are accepted in whatever form they were recorded**, on
+  `BayesianMEF`, `ConventionalMEF`, `UncensoredEM` and `LaunchMEF` alike: a
+  scalar, one offset per exposure `(n_exposures,)`, a single dark frame, one
+  frame per exposure, or one per image. Each is given its exposure axis
+  explicitly, so a per-exposure vector is no longer spread along the image
+  columns by NumPy's trailing-axis rule, and a shape that fits none of the forms
+  now raises instead of broadcasting into something that means the wrong thing.
+  `background` also defaults to `None` (i.e. 0) on `LaunchMEF`, as it already did
+  on the classes. A per-image background that does not vary across scan
+  positions — `np.broadcast_to(frame, stack.shape)` — collapses to the
+  per-exposure form, so it is uploaded once rather than re-sent with every chunk.
 - `set_fluxes` and `set_threshold` moved to `bayes_mef.utils` so the single
   image classes can use them. They are still importable from
   `bayes_mef.mef_launcher` and from the top level.

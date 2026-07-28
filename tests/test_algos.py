@@ -349,3 +349,29 @@ def test_degenerate_flux_estimate_warns_even_with_refinement():
 
     with pytest.warns(UserWarning, match="carry almost no information"):
         BayesianMEF(data, background=200.0, update_fluxes=True)
+
+
+def test_per_exposure_background_is_not_spread_over_columns(scenario, assert_close):
+    """A `(n_exposures,)` background is one offset per exposure, not per column.
+
+    NumPy lines shapes up from the trailing axis, so before `align_background`
+    this silently subtracted a different offset from each image column whenever
+    the exposure count happened to match the image width.
+    """
+    data, threshold = scenario["data"], scenario["threshold"]
+    n_exposures = data.shape[0]
+    offsets = np.linspace(5.0, 20.0, n_exposures)
+
+    got = BayesianMEF(data, threshold, scenario["times"], offsets)
+    got.run(10)
+    want = BayesianMEF(
+        data, threshold, scenario["times"], offsets.reshape(n_exposures, 1, 1)
+    )
+    want.run(10)
+    assert_close(got.fused_image, want.fused_image)
+
+
+def test_background_shape_mismatch_is_rejected(scenario):
+    data = scenario["data"]
+    with pytest.raises(ValueError, match="does not fit a stack of shape"):
+        BayesianMEF(data, background=np.zeros(data.shape[0] + 1))

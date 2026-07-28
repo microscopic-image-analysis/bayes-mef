@@ -136,6 +136,66 @@ def test_shared_3d_and_per_scan_4d_background_agree(stack, assert_close):
     assert_close(per_scan, shared)
 
 
+def _background_forms(stack):
+    """Every way of writing the same constant background this fixture uses."""
+    n_exposures, n_scans, *image = stack["pty_stack"].shape
+    level = float(stack["background"].flat[0])
+    frame = np.full(image, level)
+    return {
+        "scalar": level,
+        "one_element": np.array([level]),
+        "per_exposure": np.full(n_exposures, level),
+        "single_frame": frame,
+        "per_exposure_frames": np.broadcast_to(frame, (n_exposures, *image)).copy(),
+        "broadcast_per_image": np.broadcast_to(frame, (n_exposures, n_scans, *image)),
+        "per_image": np.full((n_exposures, n_scans, *image), level),
+    }
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        "scalar",
+        "one_element",
+        "per_exposure",
+        "single_frame",
+        "per_exposure_frames",
+        "broadcast_per_image",
+        "per_image",
+    ],
+)
+def test_background_forms_agree(stack, assert_close, form):
+    """A background means the same thing however the experiment recorded it."""
+    baseline, _ = _launch(stack).run_em(N_ITER)
+    got, _ = LaunchMEF(
+        stack["pty_stack"],
+        _background_forms(stack)[form],
+        stack["times"],
+        stack["threshold"],
+    ).run_em(N_ITER)
+    assert_close(got, baseline)
+
+
+def test_broadcast_background_is_not_uploaded_per_scan(stack):
+    """`np.broadcast_to(frame, stack.shape)` must not cost a per-scan copy."""
+    n_exposures, n_scans, *image = stack["pty_stack"].shape
+    frame = np.full(image, float(stack["background"].flat[0]))
+
+    launcher = LaunchMEF(
+        stack["pty_stack"],
+        np.broadcast_to(frame, (n_exposures, n_scans, *image)),
+        stack["times"],
+        stack["threshold"],
+    )
+    assert launcher.background.shape == (n_exposures, *image)
+
+
+def test_background_shape_mismatch_is_rejected(stack):
+    n_exposures = stack["pty_stack"].shape[0]
+    with pytest.raises(ValueError, match="does not fit a stack of shape"):
+        LaunchMEF(stack["pty_stack"], np.zeros(n_exposures + 1))
+
+
 def test_ncpus_is_ignored_but_accepted(stack, assert_close):
     """Old call sites pass ncpus positionally; it must not break them."""
     with pytest.warns(DeprecationWarning, match="ncpus=6 is ignored"):

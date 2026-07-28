@@ -5,7 +5,13 @@ import jax.numpy as jnp
 import numpy as np
 
 from . import em, kernels
-from ._compat import as_array, as_background, to_numpy, warn_if_precision_risk
+from ._compat import (
+    align_background,
+    as_array,
+    as_background,
+    to_numpy,
+    warn_if_precision_risk,
+)
 from .utils import set_fluxes, set_threshold
 
 Vector = list[float]
@@ -84,8 +90,9 @@ class ConventionalMEF:
             data when omitted.
         times (list, optional): acquisition times or flux factors. Estimated
             from the data when omitted, relative to one exposure.
-        background (np.ndarray or scalar, optional): background with same shape
-            as data or a scalar value. Defaults to 0.
+        background (np.ndarray or scalar, optional): dark counts as a scalar,
+            one offset per exposure `(i,)`, a single dark frame `(M, N)`, or one
+            frame per exposure (same shape as data). Defaults to 0.
         flux_init (str, optional): initialiser used when `times` is omitted.
             Defaults to "matched" (the best estimate from non-saturated pixels).
     """
@@ -99,6 +106,7 @@ class ConventionalMEF:
         *,
         flux_init: str = "matched",
     ) -> None:
+        background = align_background(background, np.shape(data))
         threshold, times = _resolve(
             data, threshold, times, background, False, flux_init
         )
@@ -132,8 +140,9 @@ class ExpectationMaximization(abc.ABC):
             data when omitted.
         times (list, optional): acquisition times or flux factors. Estimated
             from the data when omitted, relative to one exposure.
-        background (np.ndarray or scalar, optional): background with same shape
-            as data or a scalar value. Defaults to 0.
+        background (np.ndarray or scalar, optional): dark counts as a scalar,
+            one offset per exposure `(i,)`, a single dark frame `(M, N)`, or one
+            frame per exposure (same shape as data). Defaults to 0.
         update_fluxes (bool, optional): re-estimate the flux factors each iteration.
             Defaults to refining whenever `times` was estimated (i.e. omitted),
             and to leaving supplied `times` untouched. Pass True/False to override.
@@ -156,6 +165,7 @@ class ExpectationMaximization(abc.ABC):
         # when they are supplied, trust them. Either is overridable.
         if update_fluxes is None:
             update_fluxes = times is None
+        background = align_background(background, np.shape(data))
         threshold, times = _resolve(
             data, threshold, times, background, update_fluxes, flux_init
         )
@@ -264,8 +274,9 @@ class UncensoredEM(ExpectationMaximization):
             data when omitted.
         times (list, optional): acquisition times. Estimated from the data when
             omitted, relative to one exposure.
-        background (np.ndarray or scalar, optional): background with same shape
-            as data or a scalar value. Defaults to 0.
+        background (np.ndarray or scalar, optional): dark counts as a scalar,
+            one offset per exposure `(i,)`, a single dark frame `(M, N)`, or one
+            frame per exposure (same shape as data). Defaults to 0.
     """
 
     @property
@@ -283,8 +294,9 @@ class BayesianMEF(UncensoredEM):
             data when omitted.
         times (list, optional): acquisition times or flux factors. Estimated
             from the data when omitted, relative to one exposure.
-        background (np.ndarray or scalar, optional): background with same shape
-            as data or a scalar value. Defaults to 0.
+        background (np.ndarray or scalar, optional): dark counts as a scalar,
+            one offset per exposure `(i,)`, a single dark frame `(M, N)`, or one
+            frame per exposure (same shape as data). Defaults to 0.
         update_fluxes (bool, optional): re-estimate the flux factors each iteration.
             Defaults to refining whenever `times` was estimated (i.e. omitted),
             and to leaving supplied `times` untouched. Pass True/False to override.
